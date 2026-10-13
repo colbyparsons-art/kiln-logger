@@ -155,6 +155,7 @@
           },
           y: {
             min: unit === 'F' ? 0 : -20,
+            suggestedMax: unit === 'F' ? 300 : 150,   // keeps a sensible scale when the kiln is cold or there's no data
             grid: { color: css('--grid') }, border: { display: false },
             ticks: { color: css('--axis'), callback: v => Math.round(v).toLocaleString() + '°' },
           },
