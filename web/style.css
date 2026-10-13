@@ -213,3 +213,7 @@ table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
   background: var(--primary-bg); color: var(--primary-ink);
   padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 20; max-width: calc(100vw - 32px);
 }
+.privacy {
+  margin: 0; padding: 8px 10px; font-size: 13px; color: var(--ink-2);
+  background: var(--surface-2); border-left: 3px solid var(--warning); border-radius: 6px;
+}

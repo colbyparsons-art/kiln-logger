@@ -332,6 +332,7 @@
           <span class="hint">Filled in from the cone. Used for the over-temperature alert.</span></label>
       </div>
       ${isLive ? '' : `<label>Notes <textarea name="notes">${esc(f.notes || '')}</textarea></label>`}
+      <p class="privacy">For privacy, don't include student names in firing names or notes. Anyone with the dashboard link can read them.</p>
       <label class="check"><input type="checkbox" name="muted" ${f.alerts_muted ? 'checked' : ''}> Mute phone alerts for this firing</label>
       <div class="row">
         <button class="btn primary" type="submit">Save</button>
