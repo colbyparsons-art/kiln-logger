@@ -228,3 +228,18 @@ table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .chart-tools .tip { font-size: 12px; color: var(--muted); margin-left: 4px; }
 @media (hover: none) { .chart-tools .tip { display: none; } }
+
+/* Phone alerts */
+body:not(.owner) .owner-only { display: none !important; }
+.pa-status { margin: 0 0 12px; }
+.pa-help { margin: 12px 0 0; font-size: 13px; }
+.pa-owner { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); font-size: 13px;
+}
+.chip button { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; }
+.qr { background: #fff; padding: 12px; border-radius: 8px; width: max-content; margin: 0 auto; }
+#setup-topic { word-break: break-all; }
+table.data td.off { color: var(--muted); }

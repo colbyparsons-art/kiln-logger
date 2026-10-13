@@ -19,7 +19,8 @@ create table private.config (
   id          int primary key default 1 check (id = 1),
   device_key  text not null default replace(gen_random_uuid()::text, '-', ''),
   ntfy_topic  text not null default 'kiln-' || left(replace(gen_random_uuid()::text, '-', ''), 16),
-  ntfy_server text not null default 'https://ntfy.sh'
+  ntfy_server text not null default 'https://ntfy.sh',
+  owner_email text   -- the owner's staff login; if empty, the first staff account created
 );
 insert into private.config default values;
 
@@ -37,6 +38,8 @@ create table public.settings (
   drop_alert_c        real not null default 27.8,  -- 50 °F: alert if the kiln falls this far below its recent high...
   drop_window_min     int  not null default 20,    -- ...within this many minutes (catches a blown-out pilot)
   alerts_enabled      boolean not null default true,
+  owner_alerts        text not null default 'urgent'  -- what the owner gets for firings other people have claimed:
+                      check (owner_alerts in ('all', 'urgent', 'unclaimed')),  -- all / urgent only / none
   dashboard_url       text                         -- link opened when you tap a phone alert
 );
 insert into public.settings default values;
@@ -154,7 +157,81 @@ language sql immutable as $$
     case when f & 128 <> 0 then 'cold junction out of range' end), ''), 'unknown fault')
 $$;
 
--- Record an alert and push it to phones through ntfy.
+-- ---------------------------------------------------------------------------
+-- Who gets phone alerts
+--
+-- The owner manages a list of people (nicknames or initials only, for privacy).
+-- Each person has a private ntfy channel and a PIN. Whoever is firing enters their
+-- PIN on the dashboard to get that firing's alerts; nobody else is pinged.
+-- The owner gets everything on unclaimed firings, plus (by default) only urgent
+-- alerts on firings someone else has claimed. See settings.owner_alerts.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.people (
+  id         bigint generated always as identity primary key,
+  label      text not null,                 -- nickname or initials, never a full student name
+  allowed    boolean not null default true, -- the owner can switch someone's alerts off
+  pin        text not null unique default lpad(floor(random() * 1000000)::int::text, 6, '0'),
+  ntfy_topic text not null unique default 'kiln-' || left(replace(gen_random_uuid()::text, '-', ''), 16),
+  created_at timestamptz not null default now()
+);
+
+-- People who get alerts for a firing
+create table if not exists public.firing_recipients (
+  firing_id  bigint not null references public.firings on delete cascade,
+  person_id  bigint not null references public.people on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (firing_id, person_id)
+);
+
+-- "Send me the next firing's alerts", made while nothing is firing (kept 12 hours)
+create table if not exists public.alert_claims (
+  person_id  bigint primary key references public.people on delete cascade,
+  device_id  text not null,
+  created_at timestamptz not null default now()
+);
+
+-- True when the signed-in user is the owner
+create or replace function public.is_owner() returns boolean
+language sql stable security definer set search_path = public, private, auth, pg_temp
+as $$
+  select coalesce((auth.jwt() ->> 'email') = coalesce(
+    (select owner_email from private.config where id = 1),
+    (select email from auth.users order by created_at limit 1)), false)
+$$;
+grant execute on function public.is_owner() to anon, authenticated;
+
+alter table public.people            enable row level security;
+alter table public.firing_recipients enable row level security;
+alter table public.alert_claims      enable row level security;
+grant select, insert, update, delete on public.people, public.firing_recipients, public.alert_claims to authenticated;
+drop policy if exists "owner only" on public.people;
+drop policy if exists "owner only" on public.firing_recipients;
+drop policy if exists "owner only" on public.alert_claims;
+create policy "owner only" on public.people            for all to authenticated using (public.is_owner()) with check (public.is_owner());
+create policy "owner only" on public.firing_recipients for all to authenticated using (public.is_owner()) with check (public.is_owner());
+create policy "owner only" on public.alert_claims      for all to authenticated using (public.is_owner()) with check (public.is_owner());
+
+-- Send one ntfy notification
+create or replace function private.push(p_topic text, p_title text, p_message text, p_priority int, p_tag text)
+returns void
+language plpgsql security definer set search_path = public, private, pg_temp
+as $$
+declare
+  cfg private.config;
+  s   public.settings;
+begin
+  select * into cfg from private.config where id = 1;
+  select * into s from public.settings where id = 1;
+  perform net.http_post(
+    url  := cfg.ntfy_server,
+    body := jsonb_strip_nulls(jsonb_build_object(
+      'topic', p_topic, 'title', p_title, 'message', p_message, 'priority', p_priority,
+      'click', nullif(s.dashboard_url, ''), 'tags', jsonb_build_array(p_tag)))
+  );
+end $$;
+
+-- Record an alert and push it to the right phones.
 -- p_dedupe: skip if the same kind of alert for the same firing was sent this recently.
 create or replace function private.send_alert(
   p_firing bigint, p_kind text, p_title text, p_message text,
@@ -163,9 +240,13 @@ create or replace function private.send_alert(
 language plpgsql security definer set search_path = public, private, pg_temp
 as $$
 declare
-  cfg   private.config;
-  s     public.settings;
-  muted boolean := false;
+  cfg     private.config;
+  s       public.settings;
+  muted   boolean := false;
+  topics  text[] := '{}';
+  claimed int := 0;
+  t       text;
+  tag     text;
 begin
   if exists (select 1 from public.alerts
              where kind = p_kind and firing_id is not distinct from p_firing
@@ -180,29 +261,125 @@ begin
   if p_firing is not null then
     select alerts_muted into muted from public.firings where id = p_firing;
   end if;
-  if not s.alerts_enabled or coalesce(muted, false) or coalesce(cfg.ntfy_topic, '') = '' then
+  if not s.alerts_enabled or coalesce(muted, false) then
     return;
   end if;
 
-  perform net.http_post(
-    url  := cfg.ntfy_server,
-    body := jsonb_strip_nulls(jsonb_build_object(
-      'topic',    cfg.ntfy_topic,
-      'title',    p_title,
-      'message',  p_message,
-      'priority', p_priority,
-      'click',    nullif(s.dashboard_url, ''),
-      'tags',     jsonb_build_array(case p_kind
-                    when 'overshoot' then 'rotating_light'
-                    when 'drop'      then 'rotating_light'
-                    when 'stall'     then 'hourglass'
-                    when 'offline'   then 'warning'
-                    when 'fault'     then 'warning'
-                    when 'complete'  then 'white_check_mark'
-                    else 'fire' end)
-    ))
+  -- People who claimed this firing
+  if p_firing is not null then
+    select coalesce(array_agg(p.ntfy_topic), '{}'), count(*) into topics, claimed
+    from public.firing_recipients r join public.people p on p.id = r.person_id
+    where r.firing_id = p_firing and p.allowed;
+  end if;
+
+  -- The owner
+  if coalesce(cfg.ntfy_topic, '') <> '' and (
+       claimed = 0
+       or s.owner_alerts = 'all'
+       or (s.owner_alerts = 'urgent' and p_kind in ('overshoot', 'drop', 'offline', 'fault'))) then
+    topics := topics || cfg.ntfy_topic;
+  end if;
+
+  tag := case p_kind
+           when 'overshoot' then 'rotating_light'
+           when 'drop'      then 'rotating_light'
+           when 'stall'     then 'hourglass'
+           when 'offline'   then 'warning'
+           when 'fault'     then 'warning'
+           when 'complete'  then 'white_check_mark'
+           else 'fire' end;
+  foreach t in array topics loop
+    perform private.push(t, p_title, p_message, p_priority, tag);
+  end loop;
+end $$;
+
+-- claim_alerts(): called from the dashboard (no login) with a person's PIN.
+-- Adds them to the current firing, or to the next one if nothing is firing.
+-- p_stop = true removes them instead.
+create or replace function public.claim_alerts(p_pin text, p_device_id text, p_stop boolean default false)
+returns jsonb
+language plpgsql security definer set search_path = public, private, pg_temp
+as $$
+declare
+  p public.people;
+  f public.firings;
+begin
+  select * into p from public.people where pin = trim(p_pin);
+  if p.id is null then
+    raise exception 'That PIN was not recognized.' using errcode = '28000';
+  end if;
+  select * into f from public.firings where device_id = p_device_id and status = 'active';
+
+  if p_stop then
+    delete from public.firing_recipients where person_id = p.id and firing_id = f.id;
+    delete from public.alert_claims where person_id = p.id;
+    return jsonb_build_object('label', p.label, 'stopped', true);
+  end if;
+
+  if not p.allowed then
+    raise exception 'Alerts are switched off for %. Ask the department head.', p.label using errcode = '42501';
+  end if;
+
+  if f.id is not null then
+    insert into public.firing_recipients (firing_id, person_id) values (f.id, p.id) on conflict do nothing;
+  else
+    insert into public.alert_claims (person_id, device_id) values (p.id, p_device_id)
+    on conflict (person_id) do update set device_id = excluded.device_id, created_at = now();
+  end if;
+
+  perform private.push(p.ntfy_topic, 'Kiln alerts on',
+    case when f.id is null
+         then 'You will get alerts for the next firing, if it starts within 12 hours.'
+         else 'You will get alerts for the firing in progress.' end,
+    3, 'bell');
+  return jsonb_build_object('label', p.label, 'firing_id', f.id, 'pending', f.id is null);
+end $$;
+grant execute on function public.claim_alerts(text, text, boolean) to anon, authenticated;
+
+-- What the dashboard shows about a firing's alert recipients.
+-- Everyone sees counts; only the owner sees who.
+create or replace function public.alert_recipients(p_firing bigint, p_device_id text)
+returns jsonb
+language plpgsql stable security definer set search_path = public, private, pg_temp
+as $$
+declare
+  is_own boolean := public.is_owner();
+begin
+  return jsonb_build_object(
+    'count', (select count(*) from public.firing_recipients r join public.people p on p.id = r.person_id
+              where r.firing_id = p_firing and p.allowed),
+    'pending', (select count(*) from public.alert_claims c
+                where c.device_id = p_device_id and c.created_at > now() - interval '12 hours'),
+    'people', case when is_own then (
+      select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'label', p.label) order by p.label), '[]')
+      from public.firing_recipients r join public.people p on p.id = r.person_id
+      where r.firing_id = p_firing) end,
+    'pending_people', case when is_own then (
+      select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'label', p.label) order by p.label), '[]')
+      from public.alert_claims c join public.people p on p.id = c.person_id
+      where c.device_id = p_device_id and c.created_at > now() - interval '12 hours') end
   );
 end $$;
+grant execute on function public.alert_recipients(bigint, text) to anon, authenticated;
+
+-- When a firing starts (automatically or by hand), give it the "next firing" claims.
+create or replace function private.attach_claims() returns trigger
+language plpgsql security definer set search_path = public, private, pg_temp
+as $$
+begin
+  if new.status = 'active' then
+    insert into public.firing_recipients (firing_id, person_id)
+    select new.id, c.person_id from public.alert_claims c
+    where c.device_id = new.device_id and c.created_at > now() - interval '12 hours'
+    on conflict do nothing;
+    delete from public.alert_claims where device_id = new.device_id;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists firings_attach_claims on public.firings;
+create trigger firings_attach_claims after insert on public.firings
+  for each row execute function private.attach_claims();
 
 -- ---------------------------------------------------------------------------
 -- ingest(): called by the logger with a batch of readings.

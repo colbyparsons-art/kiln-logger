@@ -69,6 +69,18 @@
         </div>
       </div>
 
+      <div class="card" id="pa-card">
+        <h2>Phone alerts</h2>
+        <p id="pa-status" class="pa-status"></p>
+        <div class="row">
+          <button class="btn" id="pa-claim">Get alerts for this firing</button>
+          <button class="btn ghost" id="pa-stop">Stop my alerts</button>
+        </div>
+        <div id="pa-owner"></div>
+        <p class="muted pa-help">Firing the kiln? Enter your PIN so the alerts go to your phone. Only the people who sign up for a firing get its alerts.
+          To get a PIN, ask the department head.</p>
+      </div>
+
       <div class="card staff-only" id="live-staff">
         <h2>Staff controls</h2>
         <div id="live-staff-body"></div>
@@ -142,12 +154,23 @@
         <h2>Alert and firing settings</h2>
         <form id="settings-form" class="form"></form>
       </div>
+      <div class="card owner-only">
+        <h2>People who can get alerts</h2>
+        <p class="muted">Use a nickname or initials, never a student's full name. Each person gets a PIN and a private
+          alert channel. Switch someone off to stop all their alerts.</p>
+        <form id="people-add" class="row">
+          <input name="label" placeholder="Nickname or initials" maxlength="24" required style="max-width:240px">
+          <button class="btn primary" type="submit">Add person</button>
+        </form>
+        <div class="table-wrap"><table class="data" id="people-table"></table></div>
+      </div>
       <div class="card">
-        <h2>Getting alerts on your phone</h2>
+        <h2>How phone alerts work</h2>
         <ol class="howto">
-          <li>Install the free <strong>ntfy</strong> app (iPhone or Android).</li>
-          <li>Tap <strong>+</strong> and subscribe to the kiln's alert topic. Ask the department head for the topic name; anyone who knows it can subscribe, so share it only with people who should get alerts.</li>
-          <li>Alerts arrive for: firing started/complete, over temperature, stalled climb, thermocouple fault, and logger offline.</li>
+          <li>The department head adds each person here and shares their <strong>phone setup</strong> code and PIN with them.</li>
+          <li>The person installs the free <strong>ntfy</strong> app and subscribes to their own channel (one time).</li>
+          <li>When they fire, they tap <strong>Get alerts for this firing</strong> on the Live page and enter their PIN. They can sign up before lighting, too.</li>
+          <li>Only people signed up for a firing get its alerts. The department head is the fallback when nobody signs up.</li>
         </ol>
       </div>
     </section>
@@ -166,10 +189,41 @@
     </form>
   </dialog>
 
+  <dialog id="pin-dialog">
+    <form method="dialog" id="pin-form" class="form">
+      <h2 id="pin-title">Get alerts</h2>
+      <label>Your PIN <input name="pin" inputmode="numeric" autocomplete="off" maxlength="6" required></label>
+      <p class="error" id="pin-error"></p>
+      <div class="row">
+        <button type="button" class="btn ghost" id="pin-cancel">Cancel</button>
+        <button type="submit" class="btn primary" id="pin-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="setup-dialog">
+    <div class="form">
+      <h2 id="setup-title">Phone setup</h2>
+      <div class="qr" id="setup-qr"></div>
+      <ol class="howto">
+        <li>Install the free <strong>ntfy</strong> app.</li>
+        <li>Tap <strong>+</strong>, then type this channel name (server: ntfy.sh):<br><code id="setup-topic"></code></li>
+        <li>When firing, enter this PIN on the dashboard: <strong id="setup-pin"></strong></li>
+      </ol>
+      <p class="muted">Scanning the code opens the channel in a browser, where it can also be added to the app.
+        Keep the channel name private.</p>
+      <div class="row">
+        <button type="button" class="btn" id="setup-test">Send a test alert</button>
+        <button type="button" class="btn primary" id="setup-close">Done</button>
+      </div>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="sim.js"></script>

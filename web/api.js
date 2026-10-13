@@ -8,7 +8,7 @@
   const DEFAULT_SETTINGS = {
     id: 1, start_temp_c: 93.3, end_temp_c: 121.1, min_peak_c: 537.8, max_temp_c: 1330,
     overshoot_margin_c: 13.9, stall_rate_c_per_hr: 5.6, stall_window_min: 60,
-    offline_minutes: 10, drop_alert_c: 27.8, drop_window_min: 20, alerts_enabled: true, dashboard_url: '',
+    offline_minutes: 10, drop_alert_c: 27.8, drop_window_min: 20, owner_alerts: 'urgent', alerts_enabled: true, dashboard_url: '',
   };
 
   // ---------------------------------------------------------------- Supabase
@@ -54,6 +54,25 @@
     }
     endFiring(id) {
       return this._q(this.sb.from('firings').update({ status: 'complete', ended_at: new Date().toISOString() }).eq('id', id));
+    }
+
+    // Phone-alert recipients
+    async isOwner() { return !!(await this._q(this.sb.rpc('is_owner'))); }
+    listPeople() { return this._q(this.sb.from('people').select('*').order('label')); }
+    addPerson(label) { return this._q(this.sb.from('people').insert({ label }).select().single()); }
+    updatePerson(id, patch) { return this._q(this.sb.from('people').update(patch).eq('id', id)); }
+    deletePerson(id) { return this._q(this.sb.from('people').delete().eq('id', id)); }
+    alertInfo(firingId) { return this._q(this.sb.rpc('alert_recipients', { p_firing: firingId, p_device_id: this.dev })); }
+    claim(pin, stop) { return this._q(this.sb.rpc('claim_alerts', { p_pin: pin, p_device_id: this.dev, p_stop: !!stop })); }
+    addRecipient(firingId, personId) {
+      return firingId
+        ? this._q(this.sb.from('firing_recipients').insert({ firing_id: firingId, person_id: personId }))
+        : this._q(this.sb.from('alert_claims').upsert({ person_id: personId, device_id: this.dev, created_at: new Date().toISOString() }));
+    }
+    removeRecipient(firingId, personId) {
+      return firingId
+        ? this._q(this.sb.from('firing_recipients').delete().eq('firing_id', firingId).eq('person_id', personId))
+        : this._q(this.sb.from('alert_claims').delete().eq('person_id', personId));
     }
 
     subscribe(h) {
@@ -186,6 +205,56 @@
       f.ended_at = new Date(this.now()).toISOString();
       f._endMs = this.now();
     }
+
+    // Phone-alert recipients (demo: two sample people, PINs 111111 and 222222)
+    _peopleInit() {
+      if (this._people) return;
+      this._people = [
+        { id: 1, label: 'MG', allowed: true, pin: '111111', ntfy_topic: 'kiln-demo-mg' },
+        { id: 2, label: 'JT', allowed: true, pin: '222222', ntfy_topic: 'kiln-demo-jt' },
+      ];
+      this._recips = new Map([[4, new Set([1])]]);   // MG claimed the demo firing
+      this._pending = new Set();
+    }
+    _set(firingId) {
+      if (!firingId) return this._pending;
+      if (!this._recips.has(firingId)) this._recips.set(firingId, new Set());
+      return this._recips.get(firingId);
+    }
+    async isOwner() { return !!this._session; }
+    async listPeople() { this._peopleInit(); return this._people.map(p => Object.assign({}, p)); }
+    async addPerson(label) {
+      this._peopleInit();
+      const p = { id: Math.max(0, ...this._people.map(x => x.id)) + 1, label, allowed: true,
+        pin: String(Math.floor(Math.random() * 1e6)).padStart(6, '0'), ntfy_topic: 'kiln-demo-' + Math.random().toString(16).slice(2, 10) };
+      this._people.push(p);
+      return p;
+    }
+    async updatePerson(id, patch) { this._peopleInit(); Object.assign(this._people.find(p => p.id === id), patch); }
+    async deletePerson(id) {
+      this._peopleInit();
+      this._people = this._people.filter(p => p.id !== id);
+      this._recips.forEach(s => s.delete(id)); this._pending.delete(id);
+    }
+    async alertInfo(firingId) {
+      this._peopleInit();
+      const lab = ids => this._people.filter(p => ids.has(p.id)).map(p => ({ id: p.id, label: p.label }));
+      const cur = this._set(firingId);
+      return { count: lab(cur).length, pending: this._pending.size,
+        people: this._session ? lab(cur) : null, pending_people: this._session ? lab(this._pending) : null };
+    }
+    async claim(pin, stop) {
+      this._peopleInit();
+      const p = this._people.find(x => x.pin === String(pin).trim());
+      if (!p) throw new Error('That PIN was not recognized.');
+      const f = this._firings.find(x => x.status === 'active');
+      if (stop) { this._set(f && f.id).delete(p.id); this._pending.delete(p.id); return { label: p.label, stopped: true }; }
+      if (!p.allowed) throw new Error(`Alerts are switched off for ${p.label}. Ask the department head.`);
+      this._set(f && f.id).add(p.id);
+      return { label: p.label, firing_id: f ? f.id : null, pending: !f };
+    }
+    async addRecipient(firingId, personId) { this._peopleInit(); this._set(firingId).add(personId); }
+    async removeRecipient(firingId, personId) { this._peopleInit(); this._set(firingId).delete(personId); }
 
     subscribe(h) {
       setInterval(() => {

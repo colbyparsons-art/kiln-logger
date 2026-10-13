@@ -27,6 +27,7 @@
   const state = {
     status: null, active: null, firings: [], alerts: [], settings: null, session: null,
     live: [], liveRange: 'all', cmp: new Map(), curves: new Map(), view: 'live', firingId: null,
+    isOwner: false, people: [], alertInfo: null,
   };
   const charts = {};
 
@@ -300,7 +301,111 @@
     ]);
     const activeChanged = (state.active && state.active.id) !== (active && active.id);
     Object.assign(state, { status, active, firings, alerts, settings });
+    // Phone-alert sign-ups (these fail quietly if the database upgrade hasn't been run yet)
+    state.alertInfo = await api.alertInfo(active ? active.id : null).catch(() => null);
+    if (state.isOwner) state.people = await api.listPeople().catch(() => []);
     return activeChanged;
+  }
+
+  async function checkOwner() {
+    state.isOwner = state.session ? await api.isOwner().catch(() => false) : false;
+    state.people = state.isOwner ? await api.listPeople().catch(() => []) : [];
+    if (state.isOwner) state.alertInfo = await api.alertInfo(state.active ? state.active.id : null).catch(() => null);
+  }
+
+  // ------------------------------------------------------------------ phone alerts
+  function renderPhoneAlerts() {
+    const info = state.alertInfo, f = state.active;
+    $('#pa-card').hidden = !info;
+    if (!info) return;
+    const n = f ? info.count : info.pending;
+    const who = n === 1 ? '1 person' : n + ' people';
+    $('#pa-status').textContent = f
+      ? (n ? `This firing's alerts go to ${who}.` : 'Nobody has signed up for this firing’s alerts yet, so they go to the department head.')
+      : (n ? `No firing in progress. ${who} signed up for the next firing.` : 'No firing in progress. You can sign up now for the next firing’s alerts.');
+    $('#pa-claim').textContent = f ? 'Get alerts for this firing' : 'Get alerts for the next firing';
+
+    // The owner can see and change who is signed up
+    const box = $('#pa-owner');
+    if (!state.isOwner) { box.innerHTML = ''; box.className = ''; return; }
+    if (box.contains(document.activeElement)) return;
+    const list = (f ? info.people : info.pending_people) || [];
+    const ids = new Set(list.map(p => p.id));
+    const opts = state.people.filter(p => p.allowed && !ids.has(p.id));
+    box.className = 'pa-owner';
+    box.innerHTML = `<div class="muted" style="margin:0">Signed up (only you can see names):</div>
+      <div class="chips">${list.map(p => `<span class="chip">${esc(p.label)}<button data-rm="${p.id}" aria-label="Remove ${esc(p.label)}">×</button></span>`).join('') || '<span class="muted" style="margin:0">Nobody yet</span>'}</div>
+      ${opts.length ? `<select id="pa-add-sel" style="max-width:240px"><option value="">Add someone…</option>${opts.map(p => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>` : ''}`;
+    box.querySelectorAll('[data-rm]').forEach(b => {
+      b.onclick = () => api.removeRecipient(f && f.id, Number(b.dataset.rm)).then(() => refresh({ curve: false })).catch(fail);
+    });
+    const sel = $('#pa-add-sel');
+    if (sel) sel.onchange = () => {
+      if (!sel.value) return;
+      api.addRecipient(f && f.id, Number(sel.value)).then(() => { sel.blur(); return refresh({ curve: false }); }).catch(fail);
+    };
+  }
+
+  function openPin(stop) {
+    const dlg = $('#pin-dialog'), form = $('#pin-form');
+    $('#pin-title').textContent = stop ? 'Stop my alerts' : state.active ? 'Get alerts for this firing' : 'Get alerts for the next firing';
+    $('#pin-ok').textContent = stop ? 'Stop my alerts' : 'Sign me up';
+    $('#pin-error').textContent = api.demo ? 'Demo PINs: 111111 or 222222' : '';
+    form.pin.value = '';
+    form.onsubmit = e => {
+      e.preventDefault();
+      api.claim(form.pin.value, stop).then(r => {
+        dlg.close();
+        toast(stop ? `Alerts stopped for ${r.label}.` : `Alerts on for ${r.label}. Your phone should get a confirmation.`);
+        return refresh({ curve: false });
+      }).catch(err => { $('#pin-error').textContent = err.message; });
+    };
+    dlg.showModal();
+  }
+
+  function renderPeople() {
+    if (!state.isOwner) return;
+    const t = $('#people-table');
+    if (!state.people.length) { t.innerHTML = '<tbody><tr><td class="muted">No one added yet.</td></tr></tbody>'; return; }
+    t.innerHTML = `<thead><tr><th>Name</th><th>PIN</th><th>Alerts</th><th></th><th></th></tr></thead><tbody>
+      ${state.people.map(p => `<tr>
+        <td class="${p.allowed ? '' : 'off'}">${esc(p.label)}</td>
+        <td>${esc(p.pin)}</td>
+        <td><label class="check"><input type="checkbox" data-allow="${p.id}" ${p.allowed ? 'checked' : ''}> ${p.allowed ? 'On' : 'Off'}</label></td>
+        <td><button class="btn small" data-setup="${p.id}">Phone setup</button></td>
+        <td><button class="btn small ghost danger" data-del="${p.id}">Remove</button></td>
+      </tr>`).join('')}</tbody>`;
+    const find = id => state.people.find(p => p.id === Number(id));
+    t.querySelectorAll('[data-allow]').forEach(cb => {
+      cb.onchange = () => api.updatePerson(Number(cb.dataset.allow), { allowed: cb.checked }).then(reloadPeople).catch(fail);
+    });
+    t.querySelectorAll('[data-setup]').forEach(b => { b.onclick = () => openSetup(find(b.dataset.setup)); });
+    t.querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = () => {
+        const p = find(b.dataset.del);
+        if (confirm(`Remove ${p.label}? Their PIN and alert channel stop working.`)) api.deletePerson(p.id).then(reloadPeople).catch(fail);
+      };
+    });
+  }
+
+  async function reloadPeople() {
+    state.people = await api.listPeople();
+    renderPeople();
+  }
+
+  function openSetup(p) {
+    $('#setup-title').textContent = 'Phone setup for ' + p.label;
+    $('#setup-topic').textContent = p.ntfy_topic;
+    $('#setup-pin').textContent = p.pin;
+    const qr = $('#setup-qr');
+    qr.innerHTML = '';
+    if (window.QRCode) new QRCode(qr, { text: 'https://ntfy.sh/' + p.ntfy_topic, width: 180, height: 180 });
+    $('#setup-test').onclick = () => {
+      fetch('https://ntfy.sh/' + p.ntfy_topic, { method: 'POST', body: 'Test alert from the kiln dashboard. This phone is set up.' })
+        .then(r => { if (!r.ok) throw new Error('ntfy returned ' + r.status); toast('Test alert sent to ' + p.label); })
+        .catch(fail);
+    };
+    $('#setup-dialog').showModal();
   }
 
   const RANGE_LABELS = { 0.5: '30 minutes', 2: '2 hours', 6: '6 hours', 12: '12 hours', 24: '24 hours', 168: '7 days' };
@@ -339,6 +444,7 @@
     }
     $('#auth-btn').textContent = state.session ? 'Sign out' : 'Staff sign in';
     document.body.classList.toggle('staff', !!state.session);
+    document.body.classList.toggle('owner', !!state.isOwner);
   }
 
   // ------------------------------------------------------------------ live view
@@ -455,6 +561,7 @@
   function renderLive() {
     renderHero();
     renderAlerts();
+    renderPhoneAlerts();
     renderLiveStaff();
     renderLiveChart(false);
   }
@@ -689,11 +796,19 @@
       </div>
       <label>Dashboard link (opened when someone taps a phone alert)
         <input type="url" name="dashboard_url" value="${esc(s.dashboard_url || '')}" placeholder="https://…"></label>
+      ${state.isOwner ? `<label>Your alerts on firings someone else has signed up for
+        <select name="owner_alerts">
+          <option value="urgent" ${s.owner_alerts === 'urgent' ? 'selected' : ''}>Urgent only</option>
+          <option value="all" ${s.owner_alerts === 'all' ? 'selected' : ''}>All alerts</option>
+          <option value="unclaimed" ${s.owner_alerts === 'unclaimed' ? 'selected' : ''}>None</option>
+        </select>
+        <span class="hint">Urgent = over temperature, temperature drop, logger offline, sensor fault. You always get every alert for firings nobody has signed up for.</span></label>` : ''}
       <label class="check"><input type="checkbox" name="alerts_enabled" ${s.alerts_enabled ? 'checked' : ''}> Send phone alerts</label>
       <div class="row"><button class="btn primary" type="submit">Save settings</button></div>`;
     form.onsubmit = e => {
       e.preventDefault();
       const patch = { alerts_enabled: form.alerts_enabled.checked, dashboard_url: form.dashboard_url.value.trim() || null };
+      if (form.owner_alerts) patch.owner_alerts = form.owner_alerts.value;
       SETTING_FIELDS.forEach(([k, , kind]) => {
         const v = Number(form[k].value);
         patch[k] = kind === 'temp' ? fromU(v) : kind === 'delta' ? dFromU(v) : Math.round(v);
@@ -723,7 +838,7 @@
     else if (v === 'firings') renderFirings();
     else if (v === 'firing') renderFiring().catch(fail);
     else if (v === 'compare') renderCompare().catch(fail);
-    else if (v === 'settings') renderSettings();
+    else if (v === 'settings') { renderSettings(); renderPeople(); }
   }
 
   // opts.curve = false skips re-downloading the live chart (used for frequent small updates)
@@ -754,6 +869,16 @@
       dlg.showModal();
     };
     $('#login-cancel').onclick = () => dlg.close();
+    $('#pa-claim').onclick = () => openPin(false);
+    $('#pa-stop').onclick = () => openPin(true);
+    $('#pin-cancel').onclick = () => $('#pin-dialog').close();
+    $('#setup-close').onclick = () => $('#setup-dialog').close();
+    $('#people-add').onsubmit = e => {
+      e.preventDefault();
+      const label = e.target.label.value.trim();
+      if (!label) return;
+      api.addPerson(label).then(async p => { e.target.reset(); await reloadPeople(); openSetup(p); }).catch(fail);
+    };
     $$('.chart-tools button').forEach(b => {
       b.onclick = () => chartTool(b.closest('.chart-tools').dataset.chart, b.dataset.z);
     });
@@ -764,7 +889,7 @@
         .then(() => { dlg.close(); toast('Signed in'); })
         .catch(err => { $('#login-error').textContent = err.message; });
     };
-    api.onAuth(session => { state.session = session; route(); });
+    api.onAuth(async session => { state.session = session; await checkOwner(); route(); });
 
     // Redraw charts when the light/dark theme changes
     if (window.matchMedia) {
@@ -802,6 +927,7 @@
     state.session = await api.session();
     bind();
     await loadCore();
+    await checkOwner();
     // Drop saved comparisons for firings that no longer exist
     state.cmp.forEach((_, id) => { if (!state.firings.some(f => f.id === id)) state.cmp.delete(id); });
     if (!state.cmp.size) state.firings.filter(f => f.status === 'complete').slice(0, 2).forEach((f, i) => state.cmp.set(f.id, i));
