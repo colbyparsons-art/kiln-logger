@@ -95,6 +95,13 @@ create index alerts_created on public.alerts (created_at desc);
 -- and add staff accounts by hand, because every signed-in user counts as staff.
 -- ---------------------------------------------------------------------------
 
+-- Table permissions (needed if "automatically expose new tables" was off when the project was created).
+-- The row-level rules below still decide which rows each role can actually see or change.
+grant usage on schema public to anon, authenticated;
+grant select on public.settings, public.readings, public.firings, public.device_status, public.alerts to anon, authenticated;
+grant insert, update, delete on public.firings to authenticated;
+grant update on public.settings to authenticated;
+
 alter table public.settings      enable row level security;
 alter table public.readings      enable row level security;
 alter table public.firings       enable row level security;
