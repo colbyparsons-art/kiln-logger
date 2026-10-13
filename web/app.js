@@ -347,20 +347,12 @@
   }
 
   function openPin(stop) {
-    const dlg = $('#pin-dialog'), form = $('#pin-form');
-    $('#pin-title').textContent = stop ? 'Stop my alerts' : state.active ? 'Get alerts for this firing' : 'Get alerts for the next firing';
-    $('#pin-ok').textContent = stop ? 'Stop my alerts' : 'Sign me up';
-    $('#pin-error').textContent = api.demo ? 'Demo PINs: 111111 or 222222' : '';
-    form.pin.value = '';
-    form.onsubmit = e => {
-      e.preventDefault();
-      api.claim(form.pin.value, stop).then(r => {
-        dlg.close();
+    askPin(stop ? 'Stop my alerts' : state.active ? 'Get alerts for this firing' : 'Get alerts for the next firing',
+      stop ? 'Stop my alerts' : 'Sign me up',
+      pin => api.claim(pin, stop).then(r => {
         toast(stop ? `Alerts stopped for ${r.label}.` : `Alerts on for ${r.label}. Your phone should get a confirmation.`);
         return refresh({ curve: false });
-      }).catch(err => { $('#pin-error').textContent = err.message; });
-    };
-    dlg.showModal();
+      }));
   }
 
   function renderPeople() {
@@ -514,8 +506,8 @@
   }
 
   function renderAlerts() {
-    const sev = { overshoot: 'critical', drop: 'critical', fault: 'serious', offline: 'serious', stall: 'warning', complete: 'good', started: '' };
-    const label = { overshoot: 'Over temp', drop: 'Temp drop', fault: 'Fault', offline: 'Offline', stall: 'Stall', complete: 'Done', started: 'Started' };
+    const sev = { overshoot: 'critical', drop: 'critical', cooling: '', fault: 'serious', offline: 'serious', stall: 'warning', complete: 'good', started: '' };
+    const label = { overshoot: 'Over temp', drop: 'Temp drop', cooling: 'Cooling', fault: 'Fault', offline: 'Offline', stall: 'Stall', complete: 'Done', started: 'Started' };
     const items = state.alerts.map(a => `
       <li>
         <span class="badge ${sev[a.kind] || ''}"><span class="ic"></span>${esc(label[a.kind] || a.kind)}</span>
@@ -535,33 +527,79 @@
       $('#start-firing').onclick = () => api.startFiring().then(refresh).catch(fail);
       return;
     }
-    renderCooling();
     if (keepForm($('#live-form'), state.active)) return;
-    body.innerHTML = '<div id="cooling-box"></div><form class="form" id="live-form"></form>';
-    renderCooling();
+    body.innerHTML = '<form class="form" id="live-form"></form>';
     firingForm($('#live-form'), state.active, true);
   }
 
-  // Marking the kiln as cooling stops temperature-drop alerts after a planned shutoff.
-  function renderCooling() {
-    const box = $('#cooling-box'), f = state.active;
-    if (!box || !f) return;
-    box.innerHTML = f.cooling_at
-      ? `<p class="muted">Marked as cooling at ${fmtTime(f.cooling_at)}. Temperature-drop alerts are off for this firing.
-          <button class="btn small ghost" id="cool-undo">Undo</button></p>`
-      : `<p class="muted">Turned the burners off on purpose? Mark it so the falling temperature doesn't set off a drop alert.
-          (Not needed if the firing reached its target.)</p>
-          <button class="btn" id="cool-btn">Burners off – mark as cooling</button>`;
-    const set = v => api.updateFiring(f.id, { cooling_at: v }).then(() => { toast(v ? 'Marked as cooling' : 'Cooling mark removed'); return refresh({ curve: false }); }).catch(fail);
-    const b = $('#cool-btn'), u = $('#cool-undo');
-    if (b) b.onclick = () => set(new Date(api.now()).toISOString());
-    if (u) u.onclick = () => set(null);
+  // Hold (pauses the stalled-climb alert) and cooling (burners off on purpose: no drop alerts).
+  // Staff act directly; anyone else uses the PIN they signed up for the firing with.
+  function renderFiringControls() {
+    const f = state.active;
+    $('#fc-card').hidden = !f;
+    if (!f) return;
+    const now = api.now();
+    const holding = f.hold_until && ms(f.hold_until) > now;
+    const parts = [];
+    if (f.cooling_at) parts.push('Cooling since ' + fmtTime(f.cooling_at) + '. No temperature-drop alerts for this firing.');
+    if (holding && !f.cooling_at) parts.push('Holding until ' + fmtTime(f.hold_until) + '. The stalled-climb alert is paused.');
+    $('#fc-status').textContent = parts.join(' ') || 'Firing. All alerts are on.';
+
+    const btn = (act, label, minutes, cls) => `<button class="btn ${cls || ''}" data-act="${act}" data-min="${minutes || ''}">${label}</button>`;
+    let html = '';
+    if (!f.cooling_at) {
+      html += holding ? btn('resume', 'End hold')
+        : btn('hold', 'Hold 30 min', 30) + btn('hold', 'Hold 1 h', 60) + btn('hold', 'Hold 2 h', 120);
+      html += btn('cool', 'Burners off – mark as cooling');
+    } else {
+      html += btn('uncool', 'Undo cooling', 0, 'ghost');
+    }
+    $('#fc-buttons').innerHTML = html;
+    $$('#fc-buttons button').forEach(b => {
+      b.onclick = () => firingAction(b.dataset.act, Number(b.dataset.min) || null, b.textContent);
+    });
+  }
+
+  const ACTION_DONE = { hold: 'Hold started', resume: 'Hold ended', cool: 'Marked as cooling', uncool: 'Cooling mark removed' };
+
+  function firingAction(act, minutes, label) {
+    const f = state.active;
+    const done = () => { toast(ACTION_DONE[act]); return refresh({ curve: false }); };
+    if (state.session) {
+      const now = api.now();
+      const patch = {
+        hold: { hold_until: new Date(now + minutes * 60000).toISOString() },
+        resume: { hold_until: null },
+        cool: { cooling_at: new Date(now).toISOString() },
+        uncool: { cooling_at: null, drop_armed: true, drop_from_c: null },
+      }[act];
+      if (api.demo && act === 'uncool') { delete patch.drop_armed; delete patch.drop_from_c; }
+      api.updateFiring(f.id, patch).then(done).catch(fail);
+      return;
+    }
+    askPin(label, 'OK', pin => api.firingAction(pin, act, minutes).then(done));
+  }
+
+  // Ask for a PIN, run fn(pin); errors show in the dialog.
+  function askPin(title, okLabel, fn) {
+    const dlg = $('#pin-dialog'), form = $('#pin-form');
+    $('#pin-title').textContent = title;
+    $('#pin-ok').textContent = okLabel;
+    $('#pin-error').textContent = api.demo ? 'Demo PINs: 111111 or 222222' : '';
+    form.pin.value = '';
+    form.onsubmit = e => {
+      e.preventDefault();
+      Promise.resolve(fn(form.pin.value)).then(() => dlg.close())
+        .catch(err => { $('#pin-error').textContent = err.message; });
+    };
+    dlg.showModal();
   }
 
   function renderLive() {
     renderHero();
     renderAlerts();
     renderPhoneAlerts();
+    renderFiringControls();
     renderLiveStaff();
     renderLiveChart(false);
   }

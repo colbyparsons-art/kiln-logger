@@ -64,6 +64,9 @@
     deletePerson(id) { return this._q(this.sb.from('people').delete().eq('id', id)); }
     alertInfo(firingId) { return this._q(this.sb.rpc('alert_recipients', { p_firing: firingId, p_device_id: this.dev })); }
     claim(pin, stop) { return this._q(this.sb.rpc('claim_alerts', { p_pin: pin, p_device_id: this.dev, p_stop: !!stop })); }
+    firingAction(pin, action, minutes) {
+      return this._q(this.sb.rpc('firing_action', { p_pin: pin, p_device_id: this.dev, p_action: action, p_minutes: minutes || null }));
+    }
     addRecipient(firingId, personId) {
       return firingId
         ? this._q(this.sb.from('firing_recipients').insert({ firing_id: firingId, person_id: personId }))
@@ -252,6 +255,19 @@
       if (!p.allowed) throw new Error(`Alerts are switched off for ${p.label}. Ask the department head.`);
       this._set(f && f.id).add(p.id);
       return { label: p.label, firing_id: f ? f.id : null, pending: !f };
+    }
+    async firingAction(pin, action, minutes) {
+      this._peopleInit();
+      const f = this._firings.find(x => x.status === 'active');
+      if (!f) throw new Error('No firing is in progress.');
+      const p = this._people.find(x => x.pin === String(pin).trim() && x.allowed);
+      if (!p || !this._set(f.id).has(p.id)) throw new Error('That PIN is not signed up for this firing. Sign up for its alerts first.');
+      const now = this.now();
+      if (action === 'hold') f.hold_until = new Date(now + (minutes || 60) * 60000).toISOString();
+      else if (action === 'resume') f.hold_until = null;
+      else if (action === 'cool') f.cooling_at = new Date(now).toISOString();
+      else if (action === 'uncool') f.cooling_at = null;
+      return { ok: true, label: p.label };
     }
     async addRecipient(firingId, personId) { this._peopleInit(); this._set(firingId).add(personId); }
     async removeRecipient(firingId, personId) { this._peopleInit(); this._set(firingId).delete(personId); }

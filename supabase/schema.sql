@@ -68,7 +68,10 @@ create table public.firings (
   cone         text,
   target_c     real,
   alerts_muted boolean not null default false,
-  cooling_at   timestamptz,     -- set when burners are turned off on purpose; stops temperature-drop alerts
+  cooling_at   timestamptz,     -- set when the burners go off at the end (by hand or detected); stops drop alerts
+  drop_armed   boolean not null default true,  -- false after a drop alert, until the kiln climbs again
+  drop_from_c  real,            -- temperature the last drop alert's fall started from
+  hold_until   timestamptz,     -- holding on purpose until this time: no stalled-climb alerts
   created_at   timestamptz not null default now()
 );
 create unique index one_active_firing on public.firings (device_id) where status = 'active';
@@ -88,7 +91,7 @@ create table public.device_status (
 create table public.alerts (
   id         bigint generated always as identity primary key,
   firing_id  bigint references public.firings on delete cascade,
-  kind       text not null,       -- started, complete, overshoot, stall, offline, fault
+  kind       text not null,       -- started, complete, cooling, overshoot, drop, stall, offline, fault
   title      text not null,
   message    text not null,
   created_at timestamptz not null default now()
@@ -287,6 +290,7 @@ begin
            when 'offline'   then 'warning'
            when 'fault'     then 'warning'
            when 'complete'  then 'white_check_mark'
+           when 'cooling'   then 'snowflake'
            else 'fire' end;
   foreach t in array topics loop
     perform private.push(t, p_title, p_message, p_priority, tag);
@@ -335,6 +339,45 @@ begin
   return jsonb_build_object('label', p.label, 'firing_id', f.id, 'pending', f.id is null);
 end $$;
 grant execute on function public.claim_alerts(text, text, boolean) to anon, authenticated;
+
+-- firing_action(): lets the person firing (signed up with their PIN) control alerts
+-- for the current firing without a staff login. Staff can do the same while signed in.
+--   'hold'   pause stalled-climb alerts for p_minutes (a planned hold)
+--   'resume' end the hold early
+--   'cool'   burners off on purpose: mark as cooling (no more drop alerts)
+--   'uncool' undo that
+create or replace function public.firing_action(p_pin text, p_device_id text, p_action text, p_minutes int default null)
+returns jsonb
+language plpgsql security definer set search_path = public, private, pg_temp
+as $$
+declare
+  p public.people;
+  f public.firings;
+begin
+  select * into f from public.firings where device_id = p_device_id and status = 'active';
+  if f.id is null then
+    raise exception 'No firing is in progress.';
+  end if;
+  select * into p from public.people where pin = trim(p_pin) and allowed;
+  if p.id is null or not exists (select 1 from public.firing_recipients where firing_id = f.id and person_id = p.id) then
+    raise exception 'That PIN is not signed up for this firing. Sign up for its alerts first.' using errcode = '28000';
+  end if;
+
+  if p_action = 'hold' then
+    update public.firings set hold_until = now() + make_interval(mins => least(greatest(coalesce(p_minutes, 60), 5), 24 * 60))
+    where id = f.id;
+  elsif p_action = 'resume' then
+    update public.firings set hold_until = null where id = f.id;
+  elsif p_action = 'cool' then
+    update public.firings set cooling_at = now() where id = f.id;
+  elsif p_action = 'uncool' then
+    update public.firings set cooling_at = null, drop_armed = true, drop_from_c = null where id = f.id;
+  else
+    raise exception 'Unknown action %', p_action;
+  end if;
+  return jsonb_build_object('ok', true, 'label', p.label);
+end $$;
+grant execute on function public.firing_action(text, text, text, int) to anon, authenticated;
 
 -- What the dashboard shows about a firing's alert recipients.
 -- Everyone sees counts; only the owner sees who.
@@ -425,6 +468,9 @@ declare
   v_high     real;
   v_now      real;
   v_before   real;
+  v_mid      real;
+  v_early    real;
+  v_thresh   real;
 begin
   select * into cfg from private.config where id = 1;
   if p_device_key is distinct from cfg.device_key then
@@ -553,6 +599,8 @@ begin
         format('The kiln is at %s, above the %s limit.', private.fmt_f(latest_c), private.fmt_f(v_limit)),
         5, interval '15 minutes');
     elsif latest_ts - f.started_at > make_interval(mins => s.stall_window_min)
+          and (f.hold_until is null or f.hold_until < latest_ts)   -- not holding on purpose
+          and f.cooling_at is null
           and latest_c < v_goal - 15            -- still short of the goal
           and latest_c >= f.peak_c - 15 then    -- still climbing, not cooling
       select temp_c into v_then from public.readings
@@ -568,32 +616,73 @@ begin
       end if;
     end if;
 
-    -- Temperature drop (e.g. a pilot or burner blew out). To avoid false alarms:
-    --  * compare 2-minute averages, not single readings, so burner wobble is smoothed out
+    -- Falling temperature. Two different alerts:
+    --  * "Kiln is cooling" (once per firing): the firing reached its target (within 50 °F)
+    --    and the kiln is now falling, i.e. the planned shutoff. The firing is marked as
+    --    cooling, so nothing else fires until "Firing complete".
+    --  * "Kiln temperature dropping" (a pilot or burner may have gone out): before the
+    --    target. Sent once per drop; it re-arms only after the kiln climbs back to within
+    --    20 °F of where the drop started (it was relit). Slowing the cooldown by firing
+    --    down doesn't get it that high, so it doesn't cause repeat alerts.
+    -- To avoid false alarms from burner wobble, reduction, and holds that swing up and down:
+    --  * compare 2-minute averages, not single readings
     --  * the fall must be large: drop_alert_c below the high of the last drop_window_min minutes.
     --    A cooler kiln loses heat more slowly, so below about 900 °F the threshold shrinks
-    --    to 6% of the kiln's rise above room temperature (never less than about 15 °F).
-    --  * and still going (the last 2 minutes are lower than 3-5 minutes ago), so a brief
-    --    reduction dip that has already recovered doesn't count
-    --  * skip it once the kiln has been marked as cooling, or once it reached its target
-    --    (within 50 °F), since that drop is the planned shutoff
-    if f.cooling_at is null
-       and (f.target_c is null or f.peak_c < f.target_c - 28) then
+    --    to 6% of the kiln's rise above room temperature (never less than 25 °F), and the
+    --    fall may take up to 45 minutes.
+    --  * while a hold is on (Hold button), the fall must be twice as large
+    --  * and steady: each of the last four 2-minute averages, about 3 minutes apart, is lower
+    --    than the one before (about 10 minutes of continuous fall). A hold that swings turns
+    --    around before that.
+    -- Marking the firing as cooling by hand on the dashboard turns both off.
+    if f.cooling_at is null then
       select max(temp_c) into v_high from public.readings
       where device_id = p_device_id and fault = 0
         and ts between latest_ts - make_interval(mins => s.drop_window_min) and latest_ts;
+      if v_high < 480 then   -- below about 900 °F, allow a slower fall
+        select max(temp_c) into v_high from public.readings
+        where device_id = p_device_id and fault = 0
+          and ts between latest_ts - make_interval(mins => greatest(s.drop_window_min, 45)) and latest_ts;
+      end if;
       select avg(temp_c) into v_now from public.readings
       where device_id = p_device_id and fault = 0 and ts > latest_ts - interval '2 minutes' and ts <= latest_ts;
       select avg(temp_c) into v_before from public.readings
       where device_id = p_device_id and fault = 0
         and ts between latest_ts - interval '5 minutes' and latest_ts - interval '3 minutes';
-      if v_high - v_now >= least(s.drop_alert_c, greatest(8, (v_high - 24) * 0.06))
-         and v_now < v_before - 0.5 then
-        perform private.send_alert(f.id, 'drop', 'Kiln temperature dropping',
-          format('Down %s' || chr(176) || 'F from %s in the last %s minutes (now %s). Check the burners and pilots. '
-                 || 'If the kiln was turned off on purpose, mark it as cooling on the dashboard.',
-                 round((v_high - v_now) * 9 / 5), private.fmt_f(v_high), s.drop_window_min, private.fmt_f(v_now)),
-          5, interval '20 minutes');
+      select avg(temp_c) into v_mid from public.readings
+      where device_id = p_device_id and fault = 0
+        and ts between latest_ts - interval '8 minutes' and latest_ts - interval '6 minutes';
+      select avg(temp_c) into v_early from public.readings
+      where device_id = p_device_id and fault = 0
+        and ts between latest_ts - interval '11 minutes' and latest_ts - interval '9 minutes';
+
+      -- After a drop alert, re-arm once the kiln is back near where the drop started.
+      if not f.drop_armed and v_now is not null and v_now >= coalesce(f.drop_from_c, 0) - 11 then
+        update public.firings set drop_armed = true, drop_from_c = null where id = f.id;
+        f.drop_armed := true;
+      end if;
+
+      -- During a planned hold (which can swing up and down), the fall must be twice as large.
+      v_thresh := least(s.drop_alert_c, greatest(14, (v_high - 24) * 0.06))
+                  * case when f.hold_until > latest_ts then 2 else 1 end;
+      if v_high - v_now >= v_thresh
+         and v_now < v_before - 0.5 and v_before < v_mid - 0.5 and v_mid < v_early - 0.5 then
+        if f.target_c is not null and f.peak_c >= f.target_c - 28 then
+          update public.firings set cooling_at = latest_ts where id = f.id;
+          perform private.send_alert(f.id, 'cooling', 'Kiln is cooling',
+            format('Down %s' || chr(176) || 'F from the peak of %s, so the burners appear to be off. '
+                   || 'No more alerts until the firing is complete. If this wasn''t planned, check the burners.',
+                   round((f.peak_c - v_now) * 9 / 5), private.fmt_f(f.peak_c)),
+            3, interval '100 years');
+        elsif f.drop_armed then
+          update public.firings set drop_armed = false, drop_from_c = v_high where id = f.id;
+          perform private.send_alert(f.id, 'drop', 'Kiln temperature dropping',
+            format('Down %s' || chr(176) || 'F from %s in the last %s minutes (now %s). Check the burners and pilots. '
+                   || 'If the kiln was turned off on purpose, mark it as cooling on the dashboard. '
+                   || 'No more drop alerts unless the kiln climbs again and then drops.',
+                   round((v_high - v_now) * 9 / 5), private.fmt_f(v_high), s.drop_window_min, private.fmt_f(v_now)),
+            5, interval '1 minute');
+        end if;
       end if;
     end if;
   end if;
