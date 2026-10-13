@@ -34,6 +34,8 @@ create table public.settings (
   stall_rate_c_per_hr real not null default 5.6,   -- 10 °F/hr: slower than this counts as a stalled climb
   stall_window_min    int  not null default 60,    -- measured over this many minutes
   offline_minutes     int  not null default 10,    -- alert if no data this long during a firing
+  drop_alert_c        real not null default 27.8,  -- 50 °F: alert if the kiln falls this far below its recent high...
+  drop_window_min     int  not null default 20,    -- ...within this many minutes (catches a blown-out pilot)
   alerts_enabled      boolean not null default true,
   dashboard_url       text                         -- link opened when you tap a phone alert
 );
@@ -63,6 +65,7 @@ create table public.firings (
   cone         text,
   target_c     real,
   alerts_muted boolean not null default false,
+  cooling_at   timestamptz,     -- set when burners are turned off on purpose; stops temperature-drop alerts
   created_at   timestamptz not null default now()
 );
 create unique index one_active_firing on public.firings (device_id) where status = 'active';
@@ -191,6 +194,7 @@ begin
       'click',    nullif(s.dashboard_url, ''),
       'tags',     jsonb_build_array(case p_kind
                     when 'overshoot' then 'rotating_light'
+                    when 'drop'      then 'rotating_light'
                     when 'stall'     then 'hourglass'
                     when 'offline'   then 'warning'
                     when 'fault'     then 'warning'
@@ -241,6 +245,9 @@ declare
   v_then     real;
   v_limit    real;
   v_goal     real;
+  v_high     real;
+  v_now      real;
+  v_before   real;
 begin
   select * into cfg from private.config where id = 1;
   if p_device_key is distinct from cfg.device_key then
@@ -381,6 +388,35 @@ begin
           format('Up only %s' || chr(176) || 'F in the last %s minutes (now %s).',
                  round((latest_c - v_then) * 9 / 5), s.stall_window_min, private.fmt_f(latest_c)),
           4, interval '60 minutes');
+      end if;
+    end if;
+
+    -- Temperature drop (e.g. a pilot or burner blew out). To avoid false alarms:
+    --  * compare 2-minute averages, not single readings, so burner wobble is smoothed out
+    --  * the fall must be large: drop_alert_c below the high of the last drop_window_min minutes.
+    --    A cooler kiln loses heat more slowly, so below about 900 °F the threshold shrinks
+    --    to 6% of the kiln's rise above room temperature (never less than about 15 °F).
+    --  * and still going (the last 2 minutes are lower than 3-5 minutes ago), so a brief
+    --    reduction dip that has already recovered doesn't count
+    --  * skip it once the kiln has been marked as cooling, or once it reached its target
+    --    (within 50 °F), since that drop is the planned shutoff
+    if f.cooling_at is null
+       and (f.target_c is null or f.peak_c < f.target_c - 28) then
+      select max(temp_c) into v_high from public.readings
+      where device_id = p_device_id and fault = 0
+        and ts between latest_ts - make_interval(mins => s.drop_window_min) and latest_ts;
+      select avg(temp_c) into v_now from public.readings
+      where device_id = p_device_id and fault = 0 and ts > latest_ts - interval '2 minutes' and ts <= latest_ts;
+      select avg(temp_c) into v_before from public.readings
+      where device_id = p_device_id and fault = 0
+        and ts between latest_ts - interval '5 minutes' and latest_ts - interval '3 minutes';
+      if v_high - v_now >= least(s.drop_alert_c, greatest(8, (v_high - 24) * 0.06))
+         and v_now < v_before - 0.5 then
+        perform private.send_alert(f.id, 'drop', 'Kiln temperature dropping',
+          format('Down %s' || chr(176) || 'F from %s in the last %s minutes (now %s). Check the burners and pilots. '
+                 || 'If the kiln was turned off on purpose, mark it as cooling on the dashboard.',
+                 round((v_high - v_now) * 9 / 5), private.fmt_f(v_high), s.drop_window_min, private.fmt_f(v_now)),
+          5, interval '20 minutes');
       end if;
     end if;
   end if;

@@ -6,8 +6,9 @@
 // Usage:
 //   node simulate.js backfill [--days-ago 3] [--seed 7] [--bisque] [--stall] [--overshoot]
 //       Uploads one complete past firing (good for filling the history and testing overlays).
-//   node simulate.js live [--speed 60] [--seed 7] [--stall] [--overshoot]
+//   node simulate.js live [--speed 60] [--seed 7] [--stall] [--overshoot] [--blowout 8]
 //       Runs a firing in real time, sped up. At --speed 60 a 33-hour firing takes about 33 minutes.
+//       --blowout 8 makes a pilot go out 8 hours in, so the kiln starts cooling.
 //   node simulate.js csv [--seed 7] > firing.csv
 //       Prints a firing as CSV without sending anything.
 
@@ -28,6 +29,7 @@ const firing = KilnSim.createFiring({
   kind: flag('bisque') ? 'bisque' : 'glaze',
   stall: flag('stall'),
   overshoot: flag('overshoot'),
+  blowout: opt('blowout', 0) || undefined,
 });
 
 function loadConfig() {

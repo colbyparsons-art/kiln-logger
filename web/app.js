@@ -363,7 +363,7 @@
 
     let sub;
     if (faulted) sub = 'The logger reports: ' + faultText(s.last_fault) + '.';
-    else if (f) sub = 'Firing in progress · started ' + fmtDT(f.started_at) + ' · ' + fmtDur(api.now() - ms(f.started_at));
+    else if (f) sub = (f.cooling_at ? 'Cooling since ' + fmtTime(f.cooling_at) : 'Firing in progress') + ' · started ' + fmtDT(f.started_at) + ' · ' + fmtDur(api.now() - ms(f.started_at));
     else sub = 'No firing in progress';
     $('#live-sub').textContent = sub;
 
@@ -408,8 +408,8 @@
   }
 
   function renderAlerts() {
-    const sev = { overshoot: 'critical', fault: 'serious', offline: 'serious', stall: 'warning', complete: 'good', started: '' };
-    const label = { overshoot: 'Over temp', fault: 'Fault', offline: 'Offline', stall: 'Stall', complete: 'Done', started: 'Started' };
+    const sev = { overshoot: 'critical', drop: 'critical', fault: 'serious', offline: 'serious', stall: 'warning', complete: 'good', started: '' };
+    const label = { overshoot: 'Over temp', drop: 'Temp drop', fault: 'Fault', offline: 'Offline', stall: 'Stall', complete: 'Done', started: 'Started' };
     const items = state.alerts.map(a => `
       <li>
         <span class="badge ${sev[a.kind] || ''}"><span class="ic"></span>${esc(label[a.kind] || a.kind)}</span>
@@ -429,9 +429,27 @@
       $('#start-firing').onclick = () => api.startFiring().then(refresh).catch(fail);
       return;
     }
+    renderCooling();
     if (keepForm($('#live-form'), state.active)) return;
-    body.innerHTML = '<form class="form" id="live-form"></form>';
+    body.innerHTML = '<div id="cooling-box"></div><form class="form" id="live-form"></form>';
+    renderCooling();
     firingForm($('#live-form'), state.active, true);
+  }
+
+  // Marking the kiln as cooling stops temperature-drop alerts after a planned shutoff.
+  function renderCooling() {
+    const box = $('#cooling-box'), f = state.active;
+    if (!box || !f) return;
+    box.innerHTML = f.cooling_at
+      ? `<p class="muted">Marked as cooling at ${fmtTime(f.cooling_at)}. Temperature-drop alerts are off for this firing.
+          <button class="btn small ghost" id="cool-undo">Undo</button></p>`
+      : `<p class="muted">Turned the burners off on purpose? Mark it so the falling temperature doesn't set off a drop alert.
+          (Not needed if the firing reached its target.)</p>
+          <button class="btn" id="cool-btn">Burners off – mark as cooling</button>`;
+    const set = v => api.updateFiring(f.id, { cooling_at: v }).then(() => { toast(v ? 'Marked as cooling' : 'Cooling mark removed'); return refresh({ curve: false }); }).catch(fail);
+    const b = $('#cool-btn'), u = $('#cool-undo');
+    if (b) b.onclick = () => set(new Date(api.now()).toISOString());
+    if (u) u.onclick = () => set(null);
   }
 
   function renderLive() {
@@ -655,6 +673,8 @@
     ['stall_rate_c_per_hr', 'Stalled-climb alert if rising slower than (per hour)', 'delta'],
     ['stall_window_min', 'Measured over (minutes)', 'int'],
     ['offline_minutes', 'Logger-offline alert after (minutes without data)', 'int'],
+    ['drop_alert_c', 'Temperature-drop alert if it falls this far (smaller when the kiln is below about 900 °F)', 'delta'],
+    ['drop_window_min', '…within (minutes)', 'int'],
   ];
 
   function renderSettings() {

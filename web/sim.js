@@ -29,7 +29,8 @@
     };
   }
 
-  // opts: { seed, kind: 'glaze' | 'bisque', stall: bool, overshoot: bool, coolTau: hours }
+  // opts: { seed, kind: 'glaze' | 'bisque', stall: bool, overshoot: bool, coolTau: hours,
+  //         blowout: hours after lighting when a pilot goes out (the kiln then cools) }
   function createFiring(opts) {
     opts = opts || {};
     const rand = rng(opts.seed || 1);
@@ -66,8 +67,14 @@
       return 0.6 * Math.sin(h * 37.1 + p1) + 0.4 * Math.sin(h * 91.7 + p2);
     }
 
+    const blowH = opts.blowout && opts.blowout < heatHours ? opts.blowout : null;
+
     function tempAt(h) {
       if (h <= 0) return AMBIENT_C + noise(h) * 0.3;
+      if (blowH !== null && h > blowH) {
+        const cb = tempAt(blowH);
+        return AMBIENT_C + (cb - AMBIENT_C) * Math.exp(-(h - blowH) / 4) + noise(h) * 0.5;
+      }
       if (h <= heatHours) {
         let i = 1;
         while (pts[i][0] < h) i++;

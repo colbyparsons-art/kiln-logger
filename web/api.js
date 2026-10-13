@@ -8,7 +8,7 @@
   const DEFAULT_SETTINGS = {
     id: 1, start_temp_c: 93.3, end_temp_c: 121.1, min_peak_c: 537.8, max_temp_c: 1330,
     overshoot_margin_c: 13.9, stall_rate_c_per_hr: 5.6, stall_window_min: 60,
-    offline_minutes: 10, alerts_enabled: true, dashboard_url: '',
+    offline_minutes: 10, drop_alert_c: 27.8, drop_window_min: 20, alerts_enabled: true, dashboard_url: '',
   };
 
   // ---------------------------------------------------------------- Supabase
