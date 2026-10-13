@@ -40,7 +40,7 @@ Changes to the existing project are applied by pasting these files into the SQL 
 |---|---|
 | `fix-2026-10-13-degree-sign.sql` | ✅ yes |
 | `upgrade-2026-10-13-alerts.sql` (drop alert, people, PIN sign-up) | ✅ yes |
-| `upgrade-2026-10-13-cooling-hold.sql` (cooling alert, one alert per drop, Hold, PIN controls) | ❌ **not yet: run this first** |
+| `upgrade-2026-10-13-cooling-hold.sql` (cooling alert, one alert per drop, Hold, PIN controls) | ✅ yes |
 
 Copy SQL to the clipboard with `Get-Content -Raw -Encoding UTF8 <file> | Set-Clipboard`. Without `-Encoding UTF8`,
 the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
