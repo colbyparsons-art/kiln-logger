@@ -22,6 +22,8 @@ ESP32 + MAX31856  ──HTTPS──▶  Supabase (database + alert logic)  ─�
 | `simulator/` | Sends a fake gas firing to Supabase the same way the logger will. |
 | `firmware/` | ESP32 code (PlatformIO). Has a `fake` build that runs without a thermocouple. |
 | `docs/PROJECT_BRIEF.md` | The original plan and the decisions made since. |
+| `docs/STATUS.md` | **Start here:** current status, what is applied, and next steps. |
+| `tests/` | Tests for the database logic (run with `npm test` in that folder). |
 
 ## Try the dashboard now
 

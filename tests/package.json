@@ -1,0 +1,11 @@
+{
+  "name": "kiln-logger-tests",
+  "private": true,
+  "description": "Tests for the database logic in supabase/schema.sql, run in an in-memory Postgres (PGlite).",
+  "scripts": {
+    "test": "node basic-alerts.mjs .. && node alert-routing.mjs fresh ../supabase/schema.sql && node drop-and-hold.mjs .. && node held-soak.mjs .."
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.2.17"
+  }
+}
