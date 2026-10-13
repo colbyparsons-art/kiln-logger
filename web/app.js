@@ -106,8 +106,8 @@
     const raw = span / target;
     return steps.find(s => s >= raw) || steps[steps.length - 1];
   }
-  const TIME_STEPS = [5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440].map(m => m * 60000);
-  const HOUR_STEPS = [0.25, 0.5, 1, 2, 3, 4, 6, 12];
+  const TIME_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440, 2880].map(m => m * 60000);
+  const HOUR_STEPS = [1 / 12, 1 / 6, 0.25, 0.5, 1, 2, 3, 4, 6, 12, 24];
 
   // points: [[x, °C], ...] → [{x, y in display unit}], with breaks across data gaps
   function toXY(points, gap) {
@@ -119,9 +119,100 @@
     return out;
   }
 
+  // Replace a high-resolution slice of points into a coarse curve
+  function mergeDetail(base, detail) {
+    if (!detail) return base;
+    return base.filter(p => p[0] < detail.from).concat(detail.pts, base.filter(p => p[0] > detail.to));
+  }
+
+  // Build (or rebuild) a chart. If the previous chart under this name showed the same thing
+  // and was zoomed in, the new one keeps that zoom.
+  // o: { key, x: 'time' | 'hours', xMin, xMax, datasets, refs, base(), gap, refine(from, to) }
+  //   base/refine are for single-line charts: base() returns the current [ms, °C] points, and
+  //   refine() fetches finer detail for a zoomed-in window.
+  function makeChart(name, canvas, o) {
+    const prev = charts[name];
+    const keep = prev && prev.$key === o.key && prev.$zoomed
+      ? { min: prev.scales.x.min, max: prev.scales.x.max, detail: prev.$detail } : null;
+    destroy(name);
+    const c = lineChart(canvas, o);
+    Object.assign(c, { $name: name, $key: o.key, $o: o, $zoomed: false, $detail: null });
+    charts[name] = c;
+    if (keep) {
+      c.$detail = keep.detail;
+      if (o.base) setChartData(c, false);
+      c.zoomScale('x', { min: keep.min, max: keep.max }, 'none');
+      afterViewChange(c);
+    }
+    return c;
+  }
+
+  function setChartData(c, redraw) {
+    if (c.$o.base) c.data.datasets[0].data = toXY(mergeDetail(c.$o.base(), c.$detail), c.$o.gap);
+    fitY(c);
+    if (redraw !== false) c.update('none');
+  }
+
+  // When zoomed in, fit the temperature axis to what's visible; otherwise start at 0.
+  function fitY(c) {
+    const y = c.options.scales.y;
+    y.min = unit === 'F' ? 0 : -20;
+    y.max = undefined;
+    if (!c.$zoomed) return;
+    const lo = c.scales.x.min, hi = c.scales.x.max;
+    let a = Infinity, b = -Infinity;
+    c.data.datasets.forEach(d => d.data.forEach(p => {
+      if (p.y != null && p.x >= lo && p.x <= hi) { if (p.y < a) a = p.y; if (p.y > b) b = p.y; }
+    }));
+    if (a === Infinity) return;
+    // Round the ends to a clean step so the axis reads 1,500 / 1,520… rather than 1,492
+    const pad = Math.max((b - a) * 0.08, 2);
+    const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500].find(st => (b - a + 2 * pad) / st <= 8) || 1000;
+    y.min = Math.floor((a - pad) / step) * step;
+    y.max = Math.ceil((b + pad) / step) * step;
+  }
+
+  // Called after any zoom or pan
+  function afterViewChange(c) {
+    c.$zoomed = c.isZoomedOrPanned();
+    fitY(c);
+    c.update('none');
+    const o = c.$o;
+    if (!o.refine) return;
+    if (!c.$zoomed) {
+      if (c.$detail) { c.$detail = null; setChartData(c); }
+      return;
+    }
+    clearTimeout(c.$t);
+    c.$t = setTimeout(async () => {
+      const lo = c.scales.x.min, hi = c.scales.x.max, pad = (hi - lo) * 0.5;
+      try {
+        const pts = await o.refine(lo - pad, hi + pad);
+        if (charts[c.$name] !== c) return;   // chart was replaced meanwhile
+        c.$detail = { from: lo - pad, to: hi + pad, pts };
+        setChartData(c);
+      } catch (e) { fail(e); }
+    }, 300);
+  }
+
+  function chartTool(name, act) {
+    const c = charts[name];
+    if (!c) return;
+    if (act === 'in') c.zoom(1.5, 'none');
+    else if (act === 'out') c.zoom(1 / 1.5, 'none');
+    else if (act === 'left') c.pan({ x: c.chartArea.width * 0.4 }, undefined, 'none');
+    else if (act === 'right') c.pan({ x: -c.chartArea.width * 0.4 }, undefined, 'none');
+    else if (act === 'reset') {
+      c.resetZoom('none');
+      c.$detail = null;
+      if (name === 'live') { c.$zoomed = false; renderLiveChart(true); return; }
+      if (c.$o.base) setChartData(c, false);
+    }
+    afterViewChange(c);
+  }
+
   function lineChart(canvas, o) {
     const multi = o.datasets.length > 1;
-    const span = o.xMax - o.xMin;
     const time = o.x === 'time';
     return new Chart(canvas, {
       type: 'line',
@@ -141,17 +232,21 @@
             grid: { display: false }, border: { color: css('--baseline') },
             ticks: {
               color: css('--axis'), maxRotation: 0, autoSkip: true, autoSkipPadding: 16,
-              stepSize: time ? niceStep(span, 6, TIME_STEPS) : niceStep(span, 7, HOUR_STEPS),
-              callback: v => time ? timeTick(v) : v + ' h',
+              callback: v => time ? timeTick(v) : hourTick(v),
             },
-            // Put time labels on whole local clock steps (6:00, 8:00…) rather than the first reading
-            afterBuildTicks: time ? axis => {
-              const step = niceStep(span, 6, TIME_STEPS);
-              const off = new Date(o.xMin).getTimezoneOffset() * 60000;
-              const ticks = [];
-              for (let t = Math.ceil((o.xMin - off) / step) * step + off; t <= o.xMax; t += step) ticks.push({ value: t });
+            // Put labels on whole steps (6:00, 8:00… or 2 h, 4 h…), recalculated as you zoom
+            afterBuildTicks: axis => {
+              const lo = axis.min, hi = axis.max, ticks = [];
+              if (time) {
+                const step = niceStep(hi - lo, 6, TIME_STEPS);
+                const off = new Date(lo).getTimezoneOffset() * 60000;
+                for (let t = Math.ceil((lo - off) / step) * step + off; t <= hi; t += step) ticks.push({ value: t });
+              } else {
+                const step = niceStep(hi - lo, 7, HOUR_STEPS);
+                for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + 1e-9; k++) ticks.push({ value: Math.round(k * step * 1000) / 1000 });
+              }
               axis.ticks = ticks;
-            } : undefined,
+            },
           },
           y: {
             min: unit === 'F' ? 0 : -20,
@@ -163,6 +258,16 @@
         plugins: {
           legend: { display: false },
           refLines: { lines: o.refs || [] },
+          zoom: {
+            limits: { x: { min: 'original', max: 'original', minRange: time ? 5 * 60000 : 1 / 12 } },
+            zoom: {
+              mode: 'x',
+              drag: { enabled: true, threshold: 8, backgroundColor: 'rgba(42, 120, 214, 0.12)', borderColor: css('--series-1'), borderWidth: 1 },
+              wheel: { enabled: true, modifierKey: 'ctrl' },
+              onZoomComplete: ({ chart }) => afterViewChange(chart),
+            },
+            pan: { enabled: false, mode: 'x' },
+          },
           tooltip: {
             backgroundColor: css('--surface'), titleColor: css('--ink'), bodyColor: css('--ink-2'),
             borderColor: css('--border'), borderWidth: 1, padding: 10, displayColors: multi,
@@ -181,6 +286,10 @@
     const d = new Date(v);
     return d.getHours() === 0 && d.getMinutes() === 0 ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : fmtTime(v);
   }
+  function hourTick(v) {
+    const m = Math.round(v * 60);
+    return m % 60 ? Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0') : m / 60 + ' h';
+  }
   function hoursLabel(h) { return fmtDur(h * H) + ' in'; }
   function destroy(name) { if (charts[name]) { charts[name].destroy(); charts[name] = null; } }
 
@@ -194,11 +303,16 @@
     return activeChanged;
   }
 
+  const RANGE_LABELS = { 0.5: '30 minutes', 2: '2 hours', 6: '6 hours', 12: '12 hours', 24: '24 hours', 168: '7 days' };
+
+  // The range actually shown: "Firing" falls back to 12 hours when nothing is firing
+  function liveRange() {
+    return state.liveRange === 'all' && !state.active ? '12' : state.liveRange;
+  }
   function liveWindow() {
-    const now = api.now();
-    if (state.liveRange === '2') return [now - 2 * H, now];
-    if (state.active) return [ms(state.active.started_at), now];
-    return [now - 12 * H, now];
+    const now = api.now(), r = liveRange();
+    if (r === 'all') return [ms(state.active.started_at), now];
+    return [now - Number(r) * H, now];
   }
 
   async function loadLive() {
@@ -256,7 +370,7 @@
     const stats = [];
     if (f) {
       stats.push(['Name', esc(firingName(f))]);
-      stats.push(['Peak so far', fmtT(f.peak_c)]);
+      stats.push(['Peak so far', fmtT(Math.max(f.peak_c == null ? -Infinity : f.peak_c, temp == null ? -Infinity : temp))]);
       stats.push(['Target', esc(coneLabel(f))]);
       if (f.target_c && temp != null && rate > 1 && temp < f.target_c) {
         stats.push(['At this rate, target in', fmtDur((f.target_c - temp) / rate * H)]);
@@ -269,21 +383,27 @@
 
   function renderLiveChart(rebuild) {
     const [from, to] = liveWindow();
-    $('#live-chart-title').textContent = state.active ? 'Current firing' : 'Last 12 hours';
-    $$('#view-live .seg button')[0].textContent = state.active ? 'Whole firing' : '12 h';
-    const data = toXY(state.live.filter(p => p[0] >= from), 10 * 60000);
+    const r = liveRange();
+    $('#live-chart-title').textContent = r === 'all' ? 'Current firing' : 'Last ' + RANGE_LABELS[r];
+    $$('#view-live .seg button').forEach(b => {
+      b.hidden = b.dataset.range === 'all' && !state.active;
+      b.classList.toggle('on', b.dataset.range === r);
+    });
+    const base = () => state.live.filter(p => p[0] >= liveWindow()[0]);
     const refs = state.active && state.active.target_c ? [{ y: toU(state.active.target_c), label: 'Target ' + coneLabel(state.active) }] : [];
-    if (!rebuild && charts.live) {
-      const c = charts.live;
-      c.data.datasets[0].data = data;
-      c.options.scales.x.min = from; c.options.scales.x.max = Math.max(to, from + 10 * 60000);
-      c.update('none');
+    const key = [r, state.active && state.active.id, unit].join(':');
+    const c = charts.live;
+    if (!rebuild && c && c.$key === key) {
+      // New reading: extend the chart, but don't disturb a zoomed-in view
+      c.options.plugins.refLines.lines = refs;
+      if (!c.$zoomed) { c.options.scales.x.min = from; c.options.scales.x.max = Math.max(to, from + 10 * 60000); }
+      setChartData(c);
       return;
     }
-    destroy('live');
-    charts.live = lineChart($('#live-chart'), {
-      x: 'time', xMin: from, xMax: Math.max(to, from + 10 * 60000), refs,
-      datasets: [{ label: 'Temperature', data, color: css('--series-1') }],
+    makeChart('live', $('#live-chart'), {
+      key, x: 'time', xMin: from, xMax: Math.max(to, from + 10 * 60000), refs, base, gap: 10 * 60000,
+      refine: (a, b) => api.curve(a, b, 1500),
+      datasets: [{ label: 'Temperature', data: toXY(base(), 10 * 60000), color: css('--series-1') }],
     });
   }
 
@@ -309,6 +429,7 @@
       $('#start-firing').onclick = () => api.startFiring().then(refresh).catch(fail);
       return;
     }
+    if (keepForm($('#live-form'), state.active)) return;
     body.innerHTML = '<form class="form" id="live-form"></form>';
     firingForm($('#live-form'), state.active, true);
   }
@@ -317,11 +438,21 @@
     renderHero();
     renderAlerts();
     renderLiveStaff();
-    renderLiveChart(true);
+    renderLiveChart(false);
   }
 
   // ------------------------------------------------------------------ firing edit form (shared)
+  // Don't redraw a form someone is in the middle of editing (the page refreshes as readings arrive).
+  function keepForm(form, f) {
+    return !!form && form.dataset.firing === String(f.id) && form.dataset.unit === unit
+      && (form.dataset.dirty === '1' || form.contains(document.activeElement));
+  }
+
   function firingForm(form, f, isLive) {
+    form.dataset.firing = f.id;
+    form.dataset.unit = unit;
+    form.dataset.dirty = '';
+    form.oninput = () => { form.dataset.dirty = '1'; };
     const coneOpts = ['<option value="">— none —</option>']
       .concat(CONES.map(([c, tf]) => `<option value="${c}" ${f.cone === c ? 'selected' : ''}>Cone ${c} (${unit === 'F' ? tf : Math.round((tf - 32) * 5 / 9)}°${unit})</option>`));
     form.innerHTML = `
@@ -348,7 +479,12 @@
       const t = form.target.value === '' ? null : fromU(Number(form.target.value));
       const patch = { name: form.name.value.trim() || null, cone: form.cone.value || null, target_c: t, alerts_muted: form.muted.checked };
       if (!isLive) patch.notes = form.notes.value;
-      api.updateFiring(f.id, patch).then(() => { toast('Saved'); return refresh(); }).catch(fail);
+      api.updateFiring(f.id, patch).then(() => {
+        form.dataset.dirty = '';
+        if (form.contains(document.activeElement)) document.activeElement.blur();
+        toast('Saved');
+        return refresh();
+      }).catch(fail);
     };
     const act = form.querySelector('[data-act]');
     act.onclick = () => {
@@ -391,17 +527,20 @@
     ];
     $('#fd-stats').innerHTML = stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('');
     $('#fd-notes').textContent = f.notes || '';
-    if (state.session) firingForm($('#fd-form'), f, false);
+    if (state.session && !keepForm($('#fd-form'), f)) firingForm($('#fd-form'), f, false);
+    $('#fd-csv').onclick = () => downloadCsv(f, start, end);
 
+    // A finished firing doesn't change, so keep its chart (and zoom) as is.
+    const key = [f.id, f.ended_at, f.target_c, unit].join(':');
+    if (f.status === 'complete' && charts.fd && charts.fd.$key === key) return;
     const pts = await api.curve(start, end, 1500);
     if (state.view !== 'firing' || state.firingId !== f.id) return;
-    destroy('fd');
-    charts.fd = lineChart($('#fd-chart'), {
-      x: 'time', xMin: start, xMax: end,
+    makeChart('fd', $('#fd-chart'), {
+      key, x: 'time', xMin: start, xMax: end, base: () => pts, gap: 10 * 60000,
+      refine: (a, b) => api.curve(Math.max(a, start), Math.min(b, end), 1500),
       refs: f.target_c ? [{ y: toU(f.target_c), label: 'Target ' + coneLabel(f) }] : [],
       datasets: [{ label: 'Temperature', data: toXY(pts, 10 * 60000), color: css('--series-1') }],
     });
-    $('#fd-csv').onclick = () => downloadCsv(f, start, end);
   }
 
   async function downloadCsv(f, start, end) {
@@ -458,8 +597,8 @@
     const picked = state.firings.filter(f => state.cmp.has(f.id));
     $('#cmp-legend').innerHTML = picked.map(f =>
       `<span><i style="background:var(${SERIES[state.cmp.get(f.id)]})"></i>${esc(firingName(f))} · ${new Date(f.started_at).toLocaleDateString()}</span>`).join('');
-    destroy('cmp');
     if (!picked.length) {
+      destroy('cmp');
       $('#cmp-table').innerHTML = '';
       $('#cmp-legend').innerHTML = '<span>Pick firings above to overlay them.</span>';
       return;
@@ -486,7 +625,8 @@
       }
       return { label: firingName(f), data, color: css(SERIES[state.cmp.get(f.id)]) };
     });
-    charts.cmp = lineChart($('#cmp-chart'), { x: 'hours', xMin: 0, xMax: Math.ceil(maxH), datasets });
+    const key = picked.map(f => f.id + '=' + state.cmp.get(f.id)).concat(unit).join(':');
+    makeChart('cmp', $('#cmp-chart'), { key, x: 'hours', xMin: 0, xMax: Math.ceil(maxH), datasets });
 
     // Table view of the same firings
     const rows = picked.map((f, i) => {
@@ -566,9 +706,10 @@
     else if (v === 'settings') renderSettings();
   }
 
-  async function refresh() {
+  // opts.curve = false skips re-downloading the live chart (used for frequent small updates)
+  async function refresh(opts) {
     const activeChanged = await loadCore();
-    if (activeChanged || state.view === 'live') await loadLive();
+    if (activeChanged || (state.view === 'live' && !(opts && opts.curve === false))) await loadLive();
     renderView();
   }
 
@@ -582,7 +723,6 @@
     };
     $$('#view-live .seg button').forEach(b => {
       b.onclick = () => {
-        $$('#view-live .seg button').forEach(x => x.classList.toggle('on', x === b));
         state.liveRange = b.dataset.range;
         loadLive().catch(fail);
       };
@@ -594,6 +734,9 @@
       dlg.showModal();
     };
     $('#login-cancel').onclick = () => dlg.close();
+    $$('.chart-tools button').forEach(b => {
+      b.onclick = () => chartTool(b.closest('.chart-tools').dataset.chart, b.dataset.z);
+    });
     $('#login-form').onsubmit = e => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -620,7 +763,7 @@
         renderHeader();
         if (state.view === 'live') renderHero();
       },
-      onFiring() { clearTimeout(bind.ft); bind.ft = setTimeout(() => refresh().catch(fail), 500); },
+      onFiring() { clearTimeout(bind.ft); bind.ft = setTimeout(() => refresh({ curve: false }).catch(fail), 500); },
       onAlert() { api.recentAlerts(8).then(a => { state.alerts = a; if (state.view === 'live') renderAlerts(); }).catch(fail); },
     });
 

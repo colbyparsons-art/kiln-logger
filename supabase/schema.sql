@@ -129,7 +129,7 @@ alter publication supabase_realtime add table public.readings, public.device_sta
 
 create or replace function private.fmt_f(c real) returns text
 language sql immutable as $$
-  select round(c * 9 / 5 + 32)::int || '°F'
+  select round(c * 9 / 5 + 32)::int || chr(176) || 'F'   -- chr(176) is the degree sign
 $$;
 
 create or replace function private.fmt_dur(d interval) returns text
@@ -378,7 +378,7 @@ begin
       if v_then is not null
          and (latest_c - v_then) * 60.0 / s.stall_window_min < s.stall_rate_c_per_hr then
         perform private.send_alert(f.id, 'stall', 'Climb has stalled',
-          format('Up only %s°F in the last %s minutes (now %s).',
+          format('Up only %s' || chr(176) || 'F in the last %s minutes (now %s).',
                  round((latest_c - v_then) * 9 / 5), s.stall_window_min, private.fmt_f(latest_c)),
           4, interval '60 minutes');
       end if;

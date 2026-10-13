@@ -49,11 +49,24 @@
         <div class="card-head">
           <h2 id="live-chart-title">Temperature</h2>
           <div class="seg" role="group" aria-label="Chart range">
-            <button data-range="all" class="on">Whole firing</button>
-            <button data-range="2">Last 2 h</button>
+            <button data-range="all" class="on">Firing</button>
+            <button data-range="0.5">30m</button>
+            <button data-range="2">2h</button>
+            <button data-range="6">6h</button>
+            <button data-range="12">12h</button>
+            <button data-range="24">24h</button>
+            <button data-range="168">7d</button>
           </div>
         </div>
         <div class="chart-box"><canvas id="live-chart"></canvas></div>
+        <div class="chart-tools" data-chart="live">
+          <button data-z="out" aria-label="Zoom out" title="Zoom out">−</button>
+          <button data-z="in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button data-z="left" aria-label="Earlier" title="Earlier">◀</button>
+          <button data-z="right" aria-label="Later" title="Later">▶</button>
+          <button data-z="reset" title="Show everything">Reset</button>
+          <span class="tip">Drag across the chart to zoom in · Ctrl + scroll to zoom</span>
+        </div>
       </div>
 
       <div class="card staff-only" id="live-staff">
@@ -85,6 +98,14 @@
         </div>
         <dl class="stats" id="fd-stats"></dl>
         <div class="chart-box tall"><canvas id="fd-chart"></canvas></div>
+        <div class="chart-tools" data-chart="fd">
+          <button data-z="out" aria-label="Zoom out" title="Zoom out">−</button>
+          <button data-z="in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button data-z="left" aria-label="Earlier" title="Earlier">◀</button>
+          <button data-z="right" aria-label="Later" title="Later">▶</button>
+          <button data-z="reset" title="Show everything">Reset</button>
+          <span class="tip">Drag across the chart to zoom in · Ctrl + scroll to zoom</span>
+        </div>
         <p class="notes" id="fd-notes"></p>
       </div>
       <div class="card staff-only">
@@ -103,6 +124,14 @@
       <div class="card">
         <div class="legend" id="cmp-legend"></div>
         <div class="chart-box tall"><canvas id="cmp-chart"></canvas></div>
+        <div class="chart-tools" data-chart="cmp">
+          <button data-z="out" aria-label="Zoom out" title="Zoom out">−</button>
+          <button data-z="in" aria-label="Zoom in" title="Zoom in">+</button>
+          <button data-z="left" aria-label="Earlier" title="Earlier">◀</button>
+          <button data-z="right" aria-label="Later" title="Later">▶</button>
+          <button data-z="reset" title="Show everything">Reset</button>
+          <span class="tip">Drag across the chart to zoom in · Ctrl + scroll to zoom</span>
+        </div>
         <div class="table-wrap"><table class="data" id="cmp-table"></table></div>
       </div>
     </section>
@@ -140,6 +169,7 @@
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="sim.js"></script>
