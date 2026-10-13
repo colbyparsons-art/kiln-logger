@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiln Monitor</title>
+  <meta name="description" content="Live temperature and firing history for the TWU Visual Arts gas kiln.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span id="kiln-name">Kiln Monitor</span>
+    </div>
+    <div id="conn" class="conn" title="Logger connection">
+      <span class="dot"></span><span id="conn-text">Connecting…</span>
+    </div>
+    <div class="top-actions">
+      <button id="unit-toggle" class="btn ghost small" aria-label="Switch temperature units">°F</button>
+      <button id="auth-btn" class="btn ghost small">Staff sign in</button>
+    </div>
+  </header>
+
+  <div id="demo-banner" class="banner" hidden>
+    Demo mode: a simulated kiln running 30× faster than real time. Connect Supabase in <code>config.js</code> to see the real kiln.
+  </div>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#live" data-tab="live">Live</a>
+    <a href="#firings" data-tab="firings">Firings</a>
+    <a href="#compare" data-tab="compare">Compare</a>
+    <a href="#settings" data-tab="settings" class="staff-only">Settings</a>
+  </nav>
+
+  <main>
+    <!-- LIVE -->
+    <section id="view-live" class="view">
+      <div class="card hero">
+        <div class="hero-main">
+          <div class="hero-temp" id="live-temp">—</div>
+          <div class="hero-rate" id="live-rate"></div>
+        </div>
+        <div class="hero-sub" id="live-sub">Waiting for data…</div>
+        <dl class="stats" id="live-stats"></dl>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="live-chart-title">Temperature</h2>
+          <div class="seg" role="group" aria-label="Chart range">
+            <button data-range="all" class="on">Whole firing</button>
+            <button data-range="2">Last 2 h</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="live-chart"></canvas></div>
+      </div>
+
+      <div class="card staff-only" id="live-staff">
+        <h2>Staff controls</h2>
+        <div id="live-staff-body"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent alerts</h2>
+        <ul class="alerts" id="live-alerts"></ul>
+      </div>
+    </section>
+
+    <!-- FIRINGS LIST -->
+    <section id="view-firings" class="view" hidden>
+      <div class="card">
+        <h2>Firing history</h2>
+        <ul class="firing-list" id="firing-list"></ul>
+      </div>
+    </section>
+
+    <!-- ONE FIRING -->
+    <section id="view-firing" class="view" hidden>
+      <a href="#firings" class="back">← All firings</a>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="fd-title">Firing</h2>
+          <button class="btn ghost small" id="fd-csv">Download CSV</button>
+        </div>
+        <dl class="stats" id="fd-stats"></dl>
+        <div class="chart-box tall"><canvas id="fd-chart"></canvas></div>
+        <p class="notes" id="fd-notes"></p>
+      </div>
+      <div class="card staff-only">
+        <h2>Edit firing</h2>
+        <form id="fd-form" class="form"></form>
+      </div>
+    </section>
+
+    <!-- COMPARE -->
+    <section id="view-compare" class="view" hidden>
+      <div class="card">
+        <h2>Compare firings</h2>
+        <p class="muted">Pick up to 6 firings. Curves are lined up by hours since the start of each firing.</p>
+        <ul class="pick-list" id="cmp-pick"></ul>
+      </div>
+      <div class="card">
+        <div class="legend" id="cmp-legend"></div>
+        <div class="chart-box tall"><canvas id="cmp-chart"></canvas></div>
+        <div class="table-wrap"><table class="data" id="cmp-table"></table></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view" hidden>
+      <div class="card">
+        <h2>Alert and firing settings</h2>
+        <form id="settings-form" class="form"></form>
+      </div>
+      <div class="card">
+        <h2>Getting alerts on your phone</h2>
+        <ol class="howto">
+          <li>Install the free <strong>ntfy</strong> app (iPhone or Android).</li>
+          <li>Tap <strong>+</strong> and subscribe to the kiln's alert topic. Ask the department head for the topic name; anyone who knows it can subscribe, so share it only with people who should get alerts.</li>
+          <li>Alerts arrive for: firing started/complete, over temperature, stalled climb, thermocouple fault, and logger offline.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="login-dialog">
+    <form method="dialog" id="login-form" class="form">
+      <h2>Staff sign in</h2>
+      <label>Email <input type="email" name="email" autocomplete="username" required></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password"></label>
+      <p class="error" id="login-error"></p>
+      <div class="row">
+        <button type="button" class="btn ghost" id="login-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="sim.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

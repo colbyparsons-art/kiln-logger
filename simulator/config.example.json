@@ -1,0 +1,6 @@
+{
+  "supabaseUrl": "https://YOUR-PROJECT.supabase.co",
+  "supabaseAnonKey": "YOUR-ANON-OR-PUBLISHABLE-KEY",
+  "deviceKey": "DEVICE KEY FROM THE LAST LINE OF schema.sql",
+  "deviceId": "gas-kiln"
+}

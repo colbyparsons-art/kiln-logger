@@ -1,0 +1,9 @@
+# Secrets: never commit
+firmware/src/secrets.h
+simulator/config.json
+
+# Build output
+firmware/.pio/
+firmware/.vscode/
+node_modules/
+.DS_Store
