@@ -28,7 +28,7 @@ ESP32 + MAX31856  ──HTTPS──▶  Supabase (database + alert logic)  ─�
 
 ## Working on this with Claude Code
 
-Open **this folder** (`Desktopkiln-logger`) in VS Code and start Claude Code there, not in the scheduler folder.
+Open **this folder** (`Desktop\kiln-logger`) in VS Code and start Claude Code there, not in the scheduler folder.
 Claude then reads `CLAUDE.md` and `docs/STATUS.md` and picks up where things left off.
 
 ## Try the dashboard now
