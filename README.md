@@ -22,8 +22,14 @@ ESP32 + MAX31856  ──HTTPS──▶  Supabase (database + alert logic)  ─�
 | `simulator/` | Sends a fake gas firing to Supabase the same way the logger will. |
 | `firmware/` | ESP32 code (PlatformIO). Has a `fake` build that runs without a thermocouple. |
 | `docs/PROJECT_BRIEF.md` | The original plan and the decisions made since. |
+| `CLAUDE.md` | Notes Claude Code reads automatically when a session is opened on this folder. |
 | `docs/STATUS.md` | **Start here:** current status, what is applied, and next steps. |
 | `tests/` | Tests for the database logic (run with `npm test` in that folder). |
+
+## Working on this with Claude Code
+
+Open **this folder** (`Desktopkiln-logger`) in VS Code and start Claude Code there, not in the scheduler folder.
+Claude then reads `CLAUDE.md` and `docs/STATUS.md` and picks up where things left off.
 
 ## Try the dashboard now
 
