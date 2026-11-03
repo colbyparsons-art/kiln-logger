@@ -25,7 +25,7 @@ Read this first when picking the project back up. The original plan is in [PROJE
   signs up with their PIN. The owner gets urgent alerts on other people's firings and everything on firings nobody signed up for.
 - **Firing controls by PIN:** Hold (pauses the stall alert) and "Burners off – mark as cooling".
 - **Simulator** (`simulator/`): sends fake firings through the same path the logger will use.
-- **Firmware** (`firmware/`): written, but **never compiled or run**. PlatformIO is installed in VS Code.
+- **Firmware** (`firmware/`): the `fake` build compiles, uploads, and runs on the ESP32 (2026-11-03). The real `kiln` build is untested until the MAX31856 is soldered.
 
 Verified: the whole path simulator → Supabase → ntfy → phone worked with a live simulated firing on 2026-10-13.
 The alert logic was tested on streamed simulated firings (see `tests/`). Not yet verified: real hardware,
@@ -47,7 +47,9 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 
 ## When the parts arrive
 
-1. **Bench-test the ESP32 alone (no thermocouple):** VS Code → open the `firmware` folder → create `src/secrets.h`
+1. ✅ **Done 2026-11-03.** The board is on COM8 (CP210x). It joined open `twunet` WiFi with no login page and no MAC registration needed, and fake readings uploaded to Supabase.
+   If an upload fails with "device not functioning" (common after the laptop sleeps), unplug the board and plug it back in.
+   **Bench-test the ESP32 alone (no thermocouple):** VS Code → open the `firmware` folder → create `src/secrets.h`
    → choose the `fake` environment → Build. This is the **first compile**, so expect to fix a few errors. Then Upload and open the Serial Monitor at 115200 baud.
    - It prints whether campus WiFi has a login page. If it does, IT must register the MAC address it prints.
    - Fake readings should appear on the dashboard.
