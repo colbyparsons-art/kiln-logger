@@ -48,6 +48,8 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 ## When the parts arrive
 
 1. ✅ **Done 2026-11-03.** The board is on COM8 (CP210x). It joined open `twunet` WiFi with no login page and no MAC registration needed, and fake readings uploaded to Supabase.
+   **WiFi at the kiln yard: −50 dBm with the external antenna (2026-11-04), which is excellent.** For comparison, the office got −84 without the antenna and −69 with it. Keep the antenna outside any metal enclosure.
+   MAX31856 wiring checked 2026-11-04: with no thermocouple attached it correctly reports fault 0x41 (open circuit), which proves the SPI wiring is good.
    If an upload fails with "device not functioning" (common after the laptop sleeps), unplug the board and plug it back in.
    **Bench-test the ESP32 alone (no thermocouple):** VS Code → open the `firmware` folder → create `src/secrets.h`
    → choose the `fake` environment → Build. This is the **first compile**, so expect to fix a few errors. Then Upload and open the Serial Monitor at 115200 baud.
