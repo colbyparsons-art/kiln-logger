@@ -321,7 +321,7 @@ begin
   end if;
 
   if not p.allowed then
-    raise exception 'Alerts are switched off for %. Ask the department head.', p.label using errcode = '42501';
+    raise exception 'Alerts are switched off for %. Ask the moderator.', p.label using errcode = '42501';
   end if;
 
   if f.id is not null then

@@ -252,7 +252,7 @@
       if (!p) throw new Error('That PIN was not recognized.');
       const f = this._firings.find(x => x.status === 'active');
       if (stop) { this._set(f && f.id).delete(p.id); this._pending.delete(p.id); return { label: p.label, stopped: true }; }
-      if (!p.allowed) throw new Error(`Alerts are switched off for ${p.label}. Ask the department head.`);
+      if (!p.allowed) throw new Error(`Alerts are switched off for ${p.label}. Ask the moderator.`);
       this._set(f && f.id).add(p.id);
       return { label: p.label, firing_id: f ? f.id : null, pending: !f };
     }

@@ -41,6 +41,7 @@ Changes to the existing project are applied by pasting these files into the SQL 
 | `fix-2026-10-13-degree-sign.sql` | ✅ yes |
 | `upgrade-2026-10-13-alerts.sql` (drop alert, people, PIN sign-up) | ✅ yes |
 | `upgrade-2026-10-13-cooling-hold.sql` (cooling alert, one alert per drop, Hold, PIN controls) | ✅ yes |
+| `upgrade-2026-11-05-moderator.sql` (wording: "moderator" instead of "department head") | ⏳ not yet |
 
 Copy SQL to the clipboard with `Get-Content -Raw -Encoding UTF8 <file> | Set-Clipboard`. Without `-Encoding UTF8`,
 the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
@@ -69,7 +70,7 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 ## Before real use
 
 - ✅ Test data deleted and dashboard link set on 2026-11-05 (`supabase/cleanup-2026-11-05-test-data.sql`).
-- Add people (nicknames or initials) and give each their phone setup code and PIN.
+- Add people (nicknames or initials) and click **Email invite** on each row. The invite link lets each person set up their own phone (ntfy, test alert, saving the dashboard to the home screen).
 - Set a target cone on each firing. That's what lets the system tell a planned shutoff from a blown pilot.
 
 ## Still to tune with real data

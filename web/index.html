@@ -6,6 +6,13 @@
   <title>Kiln Monitor</title>
   <meta name="description" content="Live temperature and firing history for the TWU Visual Arts gas kiln.">
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="Kiln">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#eb6834">
 </head>
 <body>
   <header class="topbar">
@@ -78,7 +85,7 @@
         </div>
         <div id="pa-owner"></div>
         <p class="muted pa-help">Firing the kiln? Enter your PIN so the alerts go to your phone. Only the people who sign up for a firing get its alerts.
-          To get a PIN, ask the department head.</p>
+          To get a PIN, ask the moderator.</p>
       </div>
 
       <div class="card" id="fc-card" hidden>
@@ -166,7 +173,7 @@
       <div class="card owner-only">
         <h2>People who can get alerts</h2>
         <p class="muted">Use a nickname or initials, never a student's full name. Each person gets a PIN and a private
-          alert channel. Switch someone off to stop all their alerts.</p>
+          alert channel. A check under <strong>Can sign up</strong> only lets them sign up for alerts on firings; it doesn't send them every alert. Uncheck someone to block them and stop any alerts they're signed up for.</p>
         <form id="people-add" class="row">
           <input name="label" placeholder="Nickname or initials" maxlength="24" required style="max-width:240px">
           <button class="btn primary" type="submit">Add person</button>
@@ -176,10 +183,10 @@
       <div class="card">
         <h2>How phone alerts work</h2>
         <ol class="howto">
-          <li>The department head adds each person here and shares their <strong>phone setup</strong> code and PIN with them.</li>
+          <li>The moderator adds each person here and emails them an invite with their setup steps and PIN.</li>
           <li>The person installs the free <strong>ntfy</strong> app and subscribes to their own channel (one time).</li>
           <li>When they fire, they tap <strong>Get alerts for this firing</strong> on the Live page and enter their PIN. They can sign up before lighting, too.</li>
-          <li>Only people signed up for a firing get its alerts. The department head is the fallback when nobody signs up.</li>
+          <li>Only people signed up for a firing get its alerts. The moderator gets the alerts when nobody signs up.</li>
         </ol>
       </div>
     </section>
@@ -229,13 +236,25 @@
         <li>Subscribe to your private alert channel. On your phone, tap
           <a class="btn small" id="setup-app" href="#">Open in ntfy</a>.<br>
           If that doesn't work, open ntfy, tap <strong>+</strong>, and type this channel name (server: ntfy.sh):<br><code id="setup-topic"></code>
-          <div class="qr" id="setup-qr"></div>
-          <span class="muted">Or scan this code with your phone's camera.</span></li>
+          <div id="setup-qr-wrap"><div class="qr" id="setup-qr"></div>
+          <span class="muted">Or scan this code with your phone's camera.</span></div></li>
         <li>Tap <strong>Send a test alert</strong> below to check that your phone gets it.</li>
+        <li><strong>Save the kiln dashboard to your home screen</strong> so it's one tap away when you fire.
+          <div id="setup-saved" class="install-note" hidden>✓ It's already on your home screen.</div>
+          <div id="setup-install-wrap" hidden><button type="button" class="btn small primary" id="setup-install">Add to home screen</button></div>
+          <div id="setup-ios" class="install-note" hidden>
+            <strong>iPhone:</strong> in Safari, tap the Share button
+            <svg class="share-icon" viewBox="0 0 24 24" aria-label="Share" role="img"><path d="M12 3v12M12 3l-4 4M12 3l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            (on newer iPhones, tap <strong>⋯</strong> first to find it), scroll down, tap <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.
+            <span class="muted">If this page opened inside your email app, first open it in Safari (look for a compass icon or "Open in Safari").</span>
+          </div>
+          <div id="setup-android" class="install-note" hidden>
+            <strong>Android:</strong> in Chrome, tap the <strong>⋮</strong> menu at the top right, then <strong>Add to Home screen</strong> or <strong>Install app</strong>.
+          </div></li>
         <li>When you fire, open the dashboard's Live page, tap <strong>Get alerts for this firing</strong>, and enter your PIN:
           <strong id="setup-pin"></strong></li>
       </ol>
-      <p class="muted">Keep your channel name and PIN private.</p>
+      <p class="muted">Keep your channel name and PIN private. Keep the invite email, too, so you can find your PIN later.</p>
       <div class="row">
         <button type="button" class="btn" id="setup-test">Send a test alert</button>
         <button type="button" class="btn primary" id="setup-close">Done</button>

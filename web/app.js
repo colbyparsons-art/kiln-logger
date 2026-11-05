@@ -321,7 +321,7 @@
     const n = f ? info.count : info.pending;
     const who = n === 1 ? '1 person' : n + ' people';
     $('#pa-status').textContent = f
-      ? (n ? `This firing's alerts go to ${who}.` : 'Nobody has signed up for this firing’s alerts yet, so they go to the department head.')
+      ? (n ? `This firing's alerts go to ${who}.` : 'Nobody has signed up for this firing’s alerts yet, so they go to the moderator.')
       : (n ? `No firing in progress. ${who} signed up for the next firing.` : 'No firing in progress. You can sign up now for the next firing’s alerts.');
     $('#pa-claim').textContent = f ? 'Get alerts for this firing' : 'Get alerts for the next firing';
 
@@ -359,11 +359,11 @@
     if (!state.isOwner) return;
     const t = $('#people-table');
     if (!state.people.length) { t.innerHTML = '<tbody><tr><td class="muted">No one added yet.</td></tr></tbody>'; return; }
-    t.innerHTML = `<thead><tr><th>Name</th><th>PIN</th><th>Alerts</th><th></th><th></th><th></th></tr></thead><tbody>
+    t.innerHTML = `<thead><tr><th>Name</th><th>PIN</th><th>Can sign up</th><th></th><th></th><th></th></tr></thead><tbody>
       ${state.people.map(p => `<tr>
         <td class="${p.allowed ? '' : 'off'}">${esc(p.label)}</td>
         <td>${esc(p.pin)}</td>
-        <td><label class="check"><input type="checkbox" data-allow="${p.id}" ${p.allowed ? 'checked' : ''}> ${p.allowed ? 'On' : 'Off'}</label></td>
+        <td><label class="check"><input type="checkbox" data-allow="${p.id}" ${p.allowed ? 'checked' : ''}> ${p.allowed ? 'Yes' : 'Blocked'}</label></td>
         <td><a class="btn small primary" href="${esc(inviteMail(p))}">Email invite</a></td>
         <td><button class="btn small" data-setup="${p.id}">Phone setup</button></td>
         <td><button class="btn small ghost danger" data-del="${p.id}">Remove</button></td>
@@ -391,11 +391,58 @@
     return location.origin + location.pathname + '#join/' + p.ntfy_topic + '/' + p.pin + '/' + encodeURIComponent(p.label);
   }
 
+  // "Add to home screen": Android Chrome/Edge offer a real install prompt; iPhone needs the Share menu.
+  let installPrompt = null, setupInvited = false;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderInstall(); });
+  window.addEventListener('appinstalled', () => { installPrompt = null; renderInstall(true); });
+  function renderInstall(justSaved) {
+    const ua = navigator.userAgent;
+    const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const android = /Android/.test(ua);
+    if (!setupInvited) {  // Owner's preview: show the phone steps, never install on this computer
+      ['#setup-saved', '#setup-install-wrap'].forEach(s => { $(s).hidden = true; });
+      $('#setup-qr-wrap').hidden = false;
+      $('#setup-ios').hidden = $('#setup-android').hidden = false;
+      return;
+    }
+    $('#setup-qr-wrap').hidden = ios || android;  // a phone can't scan its own screen
+    const saved = justSaved || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    $('#setup-saved').hidden = !saved;
+    $('#setup-install-wrap').hidden = saved || !installPrompt;
+    // Phone type unknown (e.g. opened on a computer): show both.
+    $('#setup-ios').hidden = saved || (!ios && android);
+    $('#setup-android').hidden = saved || !!installPrompt || (ios && !android);
+  }
+
   function inviteMail(p) {
-    return 'mailto:?subject=' + encodeURIComponent('Kiln alerts setup') +
-      '&body=' + encodeURIComponent('Hi ' + p.label + ',\n\nWhen you fire the gas kiln, the kiln monitor can send alerts to your phone ' +
-        '(firing started, over temperature, temperature drop, and so on).\n\nTo set it up, open this link on your phone and follow the steps:\n\n' + inviteLink(p) +
-        '\n\nIt takes about two minutes and uses the free ntfy app. Please keep this link private, because it includes your PIN.');
+    const body = [
+      'Hi,',
+      '',
+      'The gas kiln now has a temperature monitor. It shows each firing live on a web dashboard and can alert your phone ' +
+        'while you fire, for example if the kiln gets too hot or a pilot blows out.',
+      '',
+      'WHY YOU ARE LISTED AS "' + p.label + '"',
+      'The dashboard can be viewed by anyone with the link, so for student privacy the system never stores full names. ' +
+        'You are listed only as "' + p.label + '". Please keep names (yours or anyone else\'s) out of firing names and notes, too.',
+      '',
+      'SET UP YOUR PHONE (about 2 minutes)',
+      'Open this link on your phone and follow the steps on the page:',
+      inviteLink(p),
+      '',
+      'The page will walk you through:',
+      '1. Installing the free ntfy app, which delivers the alerts.',
+      '2. Subscribing to your own private alert channel.',
+      '3. Sending yourself a test alert.',
+      '4. Saving the kiln dashboard to your home screen.',
+      '',
+      'WHEN YOU FIRE',
+      'Open the dashboard, tap "Get alerts for this firing", and enter your PIN: ' + p.pin,
+      '',
+      'The dashboard, any time: ' + location.origin + location.pathname,
+      '',
+      'Please keep this email so you can find your PIN later, and don\'t forward it: the link and PIN let anyone sign up for alerts as you.',
+    ].join('\n');
+    return 'mailto:?subject=' + encodeURIComponent('Kiln alerts: set up your phone') + '&body=' + encodeURIComponent(body);
   }
 
   function openSetup(p, invited) {
@@ -411,6 +458,15 @@
       $('#setup-email').href = inviteMail(p);
     }
     $('#setup-app').href = 'ntfy://ntfy.sh/' + p.ntfy_topic;
+    setupInvited = !!invited;
+    renderInstall();
+    $('#setup-install').onclick = async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      const choice = await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      renderInstall(choice && choice.outcome === 'accepted');
+    };
     $('#setup-topic').textContent = p.ntfy_topic;
     $('#setup-pin').textContent = p.pin;
     const qr = $('#setup-qr');

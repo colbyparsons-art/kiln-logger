@@ -246,5 +246,8 @@ body:not(.owner) .owner-only { display: none !important; }
 .setup-share p { margin: 0; }
 #setup-app { margin-top: 4px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.install-note, #setup-install-wrap { margin-top: 6px; }
+.install-note .muted { display: block; margin-top: 4px; }
+.share-icon { width: 18px; height: 18px; vertical-align: -3px; color: #2a78d6; }
 #setup-topic { word-break: break-all; }
 table.data td.off { color: var(--muted); }
