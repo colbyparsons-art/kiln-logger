@@ -60,7 +60,7 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
    - Fake readings should appear on the dashboard.
 2. **Bench-test the MAX31856 board** (Noteflora, quality unknown) with a spare type K thermocouple if one is available.
    Wiring: 3V3→VIN, GND→GND, GPIO18→SCK, GPIO19→SDO, GPIO23→SDI, GPIO5→CS.
-3. ✅ **Enclosure done (2026-11-05):** the electronics are in a sealed enclosure firmly attached to the kiln control box. WiFi there is -59 dBm. The MAX31856 reports its own board temperature (`cj_c` in `readings`), which is the inside-the-box temperature: 85 °F at idle. Watch it during the first firings (the ESP32 is rated to 185 °F).
+3. ✅ **Enclosure done (2026-11-05):** the electronics are in a sealed enclosure firmly attached to the kiln control box. WiFi there is -59 dBm. The MAX31856 reports its own board temperature (`cj_c` in `readings`), which is the inside-the-box temperature: 85 °F at idle. Heat isn't a concern: the control box stands about a foot from the kiln on angle iron, and the logger sits on the far side, in the old Easylog's spot from the kiln maker's design.
    Original plan: **Build the pass-through box:** panel female K mini socket → MAX31856 plus a thermocouple-wire pigtail to a male K mini plug for the Easylog.
    Keep polarity correct and all junctions inside the box. Power from the USB wall adapter only.
 4. **At the kiln:** check the Bailey controller's temperature display **doesn't shift** when the logger is plugged in.
