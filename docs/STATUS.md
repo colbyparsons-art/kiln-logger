@@ -41,8 +41,8 @@ Changes to the existing project are applied by pasting these files into the SQL 
 | `fix-2026-10-13-degree-sign.sql` | ✅ yes |
 | `upgrade-2026-10-13-alerts.sql` (drop alert, people, PIN sign-up) | ✅ yes |
 | `upgrade-2026-10-13-cooling-hold.sql` (cooling alert, one alert per drop, Hold, PIN controls) | ✅ yes |
-| `upgrade-2026-11-05-moderator.sql` (wording: "moderator" instead of "department head") | ⏳ not yet |
-| `upgrade-2026-11-05-stall-floor.sql` (stalled-climb alert only above 350 °F, editable in Settings) | ⏳ not yet |
+| `upgrade-2026-11-05-moderator.sql` (wording: "moderator" instead of "department head") | ✅ yes |
+| `upgrade-2026-11-05-stall-floor.sql` (stalled-climb alert only above 350 °F, editable in Settings) | ✅ yes |
 
 Copy SQL to the clipboard with `Get-Content -Raw -Encoding UTF8 <file> | Set-Clipboard`. Without `-Encoding UTF8`,
 the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
@@ -66,7 +66,7 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 4. **At the kiln:** check the Bailey controller's temperature display **doesn't shift** when the logger is plugged in.
    If it does, add isolation (deferred; those parts aren't on Amazon). Confirm the thermocouple is type K in the controller settings.
 5. **Run both loggers side by side** for a few firings and compare against Easylog. Then retire Easylog.
-6. **Firmware TODO:** HTTPS certificate checking (`client.setInsecure()` in `main.cpp`). The connection is encrypted but
+6. **Firmware TODO (low priority; do it with the next firmware update):** HTTPS certificate checking (`client.setInsecure()` in `main.cpp`). The connection is encrypted but
    the server isn't verified yet.
 
 ## Before real use
