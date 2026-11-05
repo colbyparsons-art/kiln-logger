@@ -385,8 +385,27 @@
     renderPeople();
   }
 
-  function openSetup(p) {
-    $('#setup-title').textContent = 'Phone setup for ' + p.label;
+  // Invite link: #join/<topic>/<pin>/<label>. Kept after the #, so it never reaches a server log.
+  function inviteLink(p) {
+    return location.origin + location.pathname + '#join/' + p.ntfy_topic + '/' + p.pin + '/' + encodeURIComponent(p.label);
+  }
+
+  function openSetup(p, invited) {
+    $('#setup-title').textContent = invited ? 'Kiln alerts: phone setup for ' + p.label : 'Phone setup for ' + p.label;
+    $('#setup-share').hidden = !!invited;
+    if (!invited) {
+      const link = inviteLink(p);
+      $('#setup-copy').onclick = () => {
+        (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject(new Error('no clipboard')))
+          .then(() => toast('Invite link copied. Paste it into a text or email to ' + p.label + '.'))
+          .catch(() => { window.prompt('Copy this invite link:', link); });
+      };
+      $('#setup-email').href = 'mailto:?subject=' + encodeURIComponent('Kiln alerts setup') +
+        '&body=' + encodeURIComponent('Hi ' + p.label + ',\n\nWhen you fire the gas kiln, the kiln monitor can send alerts to your phone ' +
+          '(firing started, over temperature, temperature drop, and so on).\n\nTo set it up, open this link on your phone and follow the steps:\n\n' + link +
+          '\n\nIt takes about two minutes and uses the free ntfy app. Please keep this link private, because it includes your PIN.');
+    }
+    $('#setup-app').href = 'ntfy://ntfy.sh/' + p.ntfy_topic;
     $('#setup-topic').textContent = p.ntfy_topic;
     $('#setup-pin').textContent = p.pin;
     const qr = $('#setup-qr');
@@ -857,6 +876,13 @@
 
   // ------------------------------------------------------------------ routing
   function route() {
+    const join = location.hash.match(/^#join\/(kiln-[0-9a-z-]+)\/(\d{6})\/(.*)$/i);
+    if (join) {
+      let label = '';
+      try { label = decodeURIComponent(join[3]); } catch (e) { label = ''; }
+      history.replaceState(null, '', location.pathname + '#live');
+      openSetup({ ntfy_topic: join[1], pin: join[2], label: label || 'you' }, true);
+    }
     const h = location.hash.replace('#', '') || 'live';
     const m = h.match(/^firing\/(\d+)$/);
     let view = m ? 'firing' : h;
