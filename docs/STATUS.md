@@ -42,6 +42,7 @@ Changes to the existing project are applied by pasting these files into the SQL 
 | `upgrade-2026-10-13-alerts.sql` (drop alert, people, PIN sign-up) | ✅ yes |
 | `upgrade-2026-10-13-cooling-hold.sql` (cooling alert, one alert per drop, Hold, PIN controls) | ✅ yes |
 | `upgrade-2026-11-05-moderator.sql` (wording: "moderator" instead of "department head") | ⏳ not yet |
+| `upgrade-2026-11-05-stall-floor.sql` (stalled-climb alert only above 350 °F, editable in Settings) | ⏳ not yet |
 
 Copy SQL to the clipboard with `Get-Content -Raw -Encoding UTF8 <file> | Set-Clipboard`. Without `-Encoding UTF8`,
 the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.

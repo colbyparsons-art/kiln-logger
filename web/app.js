@@ -898,6 +898,7 @@
     ['overshoot_margin_c', 'Over-temperature alert this far above a firing\'s target', 'delta'],
     ['stall_rate_c_per_hr', 'Stalled-climb alert if rising slower than (per hour)', 'delta'],
     ['stall_window_min', 'Measured over (minutes)', 'int'],
+    ['stall_min_c', 'Stalled-climb alert only once the kiln is above', 'temp'],
     ['offline_minutes', 'Logger-offline alert after (minutes without data)', 'int'],
     ['drop_alert_c', 'Temperature-drop alert if it falls this far (smaller when the kiln is below about 900 °F)', 'delta'],
     ['drop_window_min', '…within (minutes)', 'int'],

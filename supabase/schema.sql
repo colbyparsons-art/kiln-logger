@@ -34,6 +34,7 @@ create table public.settings (
   overshoot_margin_c  real not null default 13.9,  -- 25 °F: allowed over a firing's target before alerting
   stall_rate_c_per_hr real not null default 5.6,   -- 10 °F/hr: slower than this counts as a stalled climb
   stall_window_min    int  not null default 60,    -- measured over this many minutes
+  stall_min_c         real not null default 176.7, -- 350 °F: no stalled-climb alert below this (slow, steady early climb)
   offline_minutes     int  not null default 10,    -- alert if no data this long during a firing
   drop_alert_c        real not null default 27.8,  -- 50 °F: alert if the kiln falls this far below its recent high...
   drop_window_min     int  not null default 20,    -- ...within this many minutes (catches a blown-out pilot)
@@ -601,6 +602,7 @@ begin
     elsif latest_ts - f.started_at > make_interval(mins => s.stall_window_min)
           and (f.hold_until is null or f.hold_until < latest_ts)   -- not holding on purpose
           and f.cooling_at is null
+          and latest_c >= s.stall_min_c        -- only above the stall-alert floor
           and latest_c < v_goal - 15            -- still short of the goal
           and latest_c >= f.peak_c - 15 then    -- still climbing, not cooling
       select temp_c into v_then from public.readings
