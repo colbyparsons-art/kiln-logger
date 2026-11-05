@@ -81,6 +81,10 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 - **Soaks that swing ±30 °F or more** need the Hold button on, or they can trigger "Kiln is cooling" early.
 - Type K drifts above about 2300 °F, so check against witness cones now and then.
 
+## Future ideas
+
+- **Electric kilns:** Colby may add pages for the department's electric kilns later. That would mean one logger per kiln (each with its own `device_id`), a dashboard page or kiln picker per kiln, and the kiln name in each phone alert's title (alerts don't name the kiln yet). The gas kiln is now labeled "Bailey Gas Kiln".
+
 ## Known limitations
 
 - PINs are 6 digits and could be guessed. The worst case is someone signing a person up for, or off, a firing's alerts.
