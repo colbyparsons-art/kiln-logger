@@ -418,11 +418,11 @@
     const body = [
       'Hi,',
       '',
-      'The gas kiln now has a temperature monitor. It shows each firing live on a web dashboard and can alert your phone ' +
+      'The Bailey gas kiln now has a temperature monitor. It shows each firing live on a web dashboard and can alert your phone ' +
         'while you fire, for example if the kiln gets too hot or a pilot blows out.',
       '',
       'WHY YOU ARE LISTED AS "' + p.label + '"',
-      'The dashboard can be viewed by anyone with the link, so for student privacy the system never stores full names. ' +
+      'The dashboard can be viewed by anyone with the link, so for privacy the system never stores full names. ' +
         'You are listed only as "' + p.label + '". Please keep names (yours or anyone else\'s) out of firing names and notes, too.',
       '',
       'SET UP YOUR PHONE (about 2 minutes)',
@@ -441,6 +441,8 @@
       'The dashboard, any time: ' + location.origin + location.pathname,
       '',
       'Please keep this email so you can find your PIN later, and don\'t forward it: the link and PIN let anyone sign up for alerts as you.',
+      '',
+      '--Sent by Claude Code on behalf of Colby Parsons',
     ].join('\n');
     // Gmail's compose page, so the draft always opens in its own browser tab
     return 'https://mail.google.com/mail/?view=cm&fs=1&su=' + encodeURIComponent('Kiln alerts: set up your phone') + '&body=' + encodeURIComponent(body);
