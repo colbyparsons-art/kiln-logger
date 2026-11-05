@@ -442,7 +442,8 @@
       '',
       'Please keep this email so you can find your PIN later, and don\'t forward it: the link and PIN let anyone sign up for alerts as you.',
     ].join('\n');
-    return 'mailto:?subject=' + encodeURIComponent('Kiln alerts: set up your phone') + '&body=' + encodeURIComponent(body);
+    // Gmail's compose page, so the draft always opens in its own browser tab
+    return 'https://mail.google.com/mail/?view=cm&fs=1&su=' + encodeURIComponent('Kiln alerts: set up your phone') + '&body=' + encodeURIComponent(body);
   }
 
   function openSetup(p, invited) {
