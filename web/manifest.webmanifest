@@ -1,7 +1,7 @@
 {
-  "name": "Kiln Monitor",
-  "short_name": "Kiln",
-  "description": "Live temperature and firing history for the TWU Visual Arts gas kiln.",
+  "name": "Bailey Gas Kiln Monitor",
+  "short_name": "Bailey Kiln",
+  "description": "Live temperature and firing history for the TWU Visual Arts Bailey gas kiln.",
   "start_url": "./#live",
   "scope": "./",
   "display": "standalone",

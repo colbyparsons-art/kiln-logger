@@ -504,6 +504,7 @@
   // ------------------------------------------------------------------ header
   function renderHeader() {
     $('#kiln-name').textContent = cfg.kilnName || 'Kiln Monitor';
+    document.title = (cfg.kilnName ? cfg.kilnName + ' · ' : '') + 'Kiln Monitor';
     $('#unit-toggle').textContent = '°' + unit;
     const el = $('#conn'), s = state.status;
     const offlineMs = ((state.settings && state.settings.offline_minutes) || 10) * 60000;
