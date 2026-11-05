@@ -30,6 +30,7 @@ original plan and decisions. Update STATUS.md whenever something changes.
 - **Test database changes before shipping:** `cd tests && npm install && npm test` (in-memory Postgres via PGlite).
   To test an upgrade, run `node alert-routing.mjs up <schema from git HEAD> <upgrade file>`.
 - **Firmware:** PlatformIO in VS Code. Open the `firmware` folder. The `fake` environment needs no thermocouple.
+  Before any firmware update, check "Next firmware update" in `docs/STATUS.md`: Colby has asked for those changes to go in together.
 
 ## Working with Colby
 

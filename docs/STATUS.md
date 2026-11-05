@@ -82,6 +82,18 @@ the ° sign gets garbled. The upgrade files are plain ASCII to avoid that.
 - **Soaks that swing ±30 °F or more** need the Hold button on, or they can trigger "Kiln is cooling" early.
 - Type K drifts above about 2300 °F, so check against witness cones now and then.
 
+## Next firmware update (Colby has asked for these; do them all together)
+
+When Colby next asks to update the firmware, include all of these in one laptop visit at the kiln
+(laptop on battery, not plugged into the wall, because the board is wired to the kiln thermocouple):
+
+1. **Send every 5 seconds** (`UPLOAD_MS` 15000 -> 5000 in `main.cpp`). Keep **saving every 10 seconds** when warm (`STORE_HOT_MS`) and every 60 seconds when cold.
+2. **Timing set from the dashboard:** add two Settings fields, "Save a reading every __ seconds" and "Send readings every __ seconds", each limited to a safe range
+   (about 5-60 s and 5-60 s). `ingest()` returns the current values in its reply, and the firmware adopts them. Defaults: save 10 s, send 5 s.
+   This needs a database upgrade, a dashboard change, and the firmware change.
+3. **HTTPS certificate checking** (replace `client.setInsecure()`), low priority. Include several root certificates so a change of
+   certificate issuer at Supabase doesn't stop uploads.
+
 ## Future ideas
 
 - **Electric kilns:** Colby may add pages for the department's electric kilns later. That would mean one logger per kiln (each with its own `device_id`), a dashboard page or kiln picker per kiln, and the kiln name in each phone alert's title (alerts don't name the kiln yet). The gas kiln is now labeled "Bailey Gas Kiln".
