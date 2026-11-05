@@ -22,6 +22,7 @@ original plan and decisions. Update STATUS.md whenever something changes.
 ## How changes ship
 
 - **Dashboard (`web/`):** commit and push to `main`; GitHub Pages redeploys. Live at https://colbyparsonsart.com/kiln-logger/.
+  Whenever a `.js` or `.css` file changes, bump the `?v=` number on its tags in `index.html`, so browsers don't keep running old code.
 - **Database:** `supabase/schema.sql` is always the full setup for a new project. Changes to the live project go in a
   new `supabase/upgrade-YYYY-MM-DD-*.sql` that is safe to run twice and ASCII-only. Colby pastes it into the Supabase SQL Editor.
   Put it on the clipboard with `Get-Content -Raw -Encoding UTF8 <file> | Set-Clipboard`; without `-Encoding UTF8` the ° sign

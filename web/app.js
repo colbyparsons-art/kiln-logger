@@ -364,7 +364,7 @@
         <td class="${p.allowed ? '' : 'off'}">${esc(p.label)}</td>
         <td>${esc(p.pin)}</td>
         <td><label class="check"><input type="checkbox" data-allow="${p.id}" ${p.allowed ? 'checked' : ''}> ${p.allowed ? 'Yes' : 'Blocked'}</label></td>
-        <td><a class="btn small primary" href="${esc(inviteMail(p))}">Email invite</a></td>
+        <td><a class="btn small primary" href="${esc(inviteMail(p))}" target="_blank" rel="noopener">Email invite</a></td>
         <td><button class="btn small" data-setup="${p.id}">Phone setup</button></td>
         <td><button class="btn small ghost danger" data-del="${p.id}">Remove</button></td>
       </tr>`).join('')}</tbody>`;
