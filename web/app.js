@@ -359,11 +359,12 @@
     if (!state.isOwner) return;
     const t = $('#people-table');
     if (!state.people.length) { t.innerHTML = '<tbody><tr><td class="muted">No one added yet.</td></tr></tbody>'; return; }
-    t.innerHTML = `<thead><tr><th>Name</th><th>PIN</th><th>Alerts</th><th></th><th></th></tr></thead><tbody>
+    t.innerHTML = `<thead><tr><th>Name</th><th>PIN</th><th>Alerts</th><th></th><th></th><th></th></tr></thead><tbody>
       ${state.people.map(p => `<tr>
         <td class="${p.allowed ? '' : 'off'}">${esc(p.label)}</td>
         <td>${esc(p.pin)}</td>
         <td><label class="check"><input type="checkbox" data-allow="${p.id}" ${p.allowed ? 'checked' : ''}> ${p.allowed ? 'On' : 'Off'}</label></td>
+        <td><a class="btn small primary" href="${esc(inviteMail(p))}">Email invite</a></td>
         <td><button class="btn small" data-setup="${p.id}">Phone setup</button></td>
         <td><button class="btn small ghost danger" data-del="${p.id}">Remove</button></td>
       </tr>`).join('')}</tbody>`;
@@ -390,6 +391,13 @@
     return location.origin + location.pathname + '#join/' + p.ntfy_topic + '/' + p.pin + '/' + encodeURIComponent(p.label);
   }
 
+  function inviteMail(p) {
+    return 'mailto:?subject=' + encodeURIComponent('Kiln alerts setup') +
+      '&body=' + encodeURIComponent('Hi ' + p.label + ',\n\nWhen you fire the gas kiln, the kiln monitor can send alerts to your phone ' +
+        '(firing started, over temperature, temperature drop, and so on).\n\nTo set it up, open this link on your phone and follow the steps:\n\n' + inviteLink(p) +
+        '\n\nIt takes about two minutes and uses the free ntfy app. Please keep this link private, because it includes your PIN.');
+  }
+
   function openSetup(p, invited) {
     $('#setup-title').textContent = invited ? 'Kiln alerts: phone setup for ' + p.label : 'Phone setup for ' + p.label;
     $('#setup-share').hidden = !!invited;
@@ -400,10 +408,7 @@
           .then(() => toast('Invite link copied. Paste it into a text or email to ' + p.label + '.'))
           .catch(() => { window.prompt('Copy this invite link:', link); });
       };
-      $('#setup-email').href = 'mailto:?subject=' + encodeURIComponent('Kiln alerts setup') +
-        '&body=' + encodeURIComponent('Hi ' + p.label + ',\n\nWhen you fire the gas kiln, the kiln monitor can send alerts to your phone ' +
-          '(firing started, over temperature, temperature drop, and so on).\n\nTo set it up, open this link on your phone and follow the steps:\n\n' + link +
-          '\n\nIt takes about two minutes and uses the free ntfy app. Please keep this link private, because it includes your PIN.');
+      $('#setup-email').href = inviteMail(p);
     }
     $('#setup-app').href = 'ntfy://ntfy.sh/' + p.ntfy_topic;
     $('#setup-topic').textContent = p.ntfy_topic;

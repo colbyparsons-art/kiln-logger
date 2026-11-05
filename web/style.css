@@ -245,5 +245,6 @@ body:not(.owner) .owner-only { display: none !important; }
 .setup-share { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: grid; gap: 8px; }
 .setup-share p { margin: 0; }
 #setup-app { margin-top: 4px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 #setup-topic { word-break: break-all; }
 table.data td.off { color: var(--muted); }
